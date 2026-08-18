@@ -155,7 +155,8 @@ The rubric rewards honesty here, and every item is something a viva could otherw
 - **Single Kafka broker, RF=1 — and under Kappa this is more serious than under Lambda**, because the log is the only copy of the record. Say this explicitly.
 - **Single-node Cassandra defeats Cassandra's own purpose** — no replication, no tunable consistency, no failover.
 - Kafka retention set to 3 real hours (= 30 simulated days) for laptop constraints.
-- One 40-bed ward; a single Spark master with one or two local workers.
+- One 40-bed ward.
+- **Spark runs in `local[4]` mode for the default demo profile**, not on a standalone cluster, because the host has 15.6 GB of RAM (`10 §1.3`). Structured Streaming semantics are identical, and **replay timing is unaffected** — the headline reprocessing figure holds. What is not demonstrated is task distribution across separate executor nodes; the cluster topology is brought up under `make up-full` for one screenshot, and §8 reports the replay duration under **both** deployments. At 13 events/second this was never a distributed-scale demonstration in any configuration.
 - No authentication, TLS or ACLs anywhere; default credentials in `.env.example`.
 
 **Correctness and semantics**

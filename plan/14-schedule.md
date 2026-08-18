@@ -125,14 +125,43 @@ Everything downstream depends on this.
 
 ## Day 11 — Dry run and screenshot capture
 
-- Run each stack for a full multi-simulated-day session
-- Verify every scripted narrative fires on cue — **B: `P014` deterioration, lab corroboration, `P031` under v1 vs v2, `P007` not alerting, the day-5 missing lab file**
-- **Run the full replay and capture R9–R12**
-- Capture all ~17 screenshots per project
-- Fill in the measured-numbers tables with real values
-- Rehearse both demo scripts with a timer
+Run in **three passes**, dropping a profile level between each so memory never binds.
 
-**Milestone:** every screenshot captured; both demos rehearsed and timed.
+**Pass 1 — `make up-obs` (the main session, ~2 h)**
+
+- Run each stack for a full multi-simulated-day session
+- Verify every scripted narrative fires on cue — **`P014` deterioration, lab corroboration, `P031` under v1 vs v2, `P007` not alerting, the day-5 missing lab file**
+- **Run the full replay and capture R9–R12** — the highest-value screenshots in this project
+- Capture R1–R10, R12–R14, R16–R17 (`12 §3`)
+- Fill in the measured-numbers table, especially **the replay duration** — the headline Kappa figure
+
+**Pass 2 — `make chaos-*` (still on `up-obs`)**
+
+- Run every chaos scenario; capture **R13: the ward monitor emptying** as TTLs expire with `WardMonitoringSilent` firing. This is the project's signature observability screenshot.
+- Record actual detection times, and the observed time for the monitor to empty (expect ≈120 s = the TTL)
+
+**Pass 3 — ★ `make up-full`, one stack only, nothing else running (~30 min) ★**
+
+This pass exists because Jaeger/OTel and the Spark master/worker pair only run in the `full`
+profile (`10 §1.3`). **It is not optional** — skipping it forfeits observability marks and the
+one screenshot that shows distributed execution.
+
+- [ ] `make down` the *other* project first, and close anything else consuming RAM
+- [ ] **R15 — the Jaeger trace waterfall** (monitor → micro-batch → Cassandra → API). The only
+      evidence for the rubric's "tracing" requirement; without it that part of the 10-mark
+      observability criterion is unevidenced.
+- [ ] **Spark UI with the real cluster** — the Executors tab showing tasks across two workers.
+      Pair it with the local-mode screenshot so the report can show both and explain the choice.
+- [ ] **Re-run the replay once on the cluster** and record the duration alongside the local-mode
+      figure. Two numbers for the same replay is a genuinely good result to publish — it shows
+      the reprocessing claim holds under both deployments.
+- [ ] Note the observed `up-full` memory figure for `10 §1.3` — the profile numbers are estimates
+      from image defaults and configured limits, and this is where they get validated
+- [ ] `make down` immediately afterwards; drop back to `up-obs`
+
+Then: rehearse both demo scripts with a timer.
+
+**Milestone:** every screenshot captured **including R15 and the cluster view**; the replay timed under both deployments; both demos rehearsed and timed.
 
 ---
 
