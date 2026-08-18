@@ -9,7 +9,7 @@
 ## Day 0 — Prerequisites (½ day)
 
 - [ ] **Enable Docker Desktop WSL integration** (`10 §0`); verify `docker run hello-world`
-- [ ] `.wslconfig` with `memory=12GB`; `wsl --shutdown`
+- [ ] `.wslconfig` with `memory=11GB`, `swap=8GB`; `wsl --shutdown` (host is 15.6 GB — see `10 §0.2`)
 - [ ] `docker pull` every image in both compose files (~8 GB) — do it once, not mid-build
 - [ ] `git init` both repos, `.gitignore`, initial commit
 - [ ] Scaffold both directory trees

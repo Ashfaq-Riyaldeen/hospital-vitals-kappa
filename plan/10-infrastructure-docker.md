@@ -5,22 +5,79 @@
 
 ---
 
-## 0. Prerequisite: enable Docker in WSL
+## 0. Prerequisites — verified against this machine (2026-08-18 audit)
 
-Docker Desktop is installed on Windows but **WSL integration is not enabled for this Ubuntu distro**. Before day 1:
+### 0.1 The blocker: Docker WSL integration is OFF
+
+Confirmed from Docker Desktop's own config (`AppData/Roaming/Docker/settings-store.json`):
+`"IntegratedWslDistros": []`. Docker Desktop is installed but not integrated with this
+Ubuntu distro, and was not running at audit time.
 
 > Docker Desktop → **Settings → Resources → WSL Integration** → enable this Ubuntu distro → **Apply & Restart**
 
-Verify with `docker run --rm hello-world` and `docker compose version`.
+Verify: `docker run --rm hello-world` and `docker compose version`.
 
-Then create `C:\Users\<you>\.wslconfig` and run `wsl --shutdown`:
+Good news: `docker_data.vhdx` is already **34 GB**, so images from previous use are cached
+and the pulls will be faster than a cold start.
+
+### 0.2 The real constraint: 15.6 GB of host RAM
+
+| | |
+|---|---|
+| **Host physical RAM** | **15.6 GB** (measured, not assumed) |
+| Host logical CPUs | 16 |
+| WSL currently sees | 14 GB — no `.wslconfig` exists, so WSL has taken ~90% of the host |
+| Windows itself needs | ~3–4 GB |
+| **Realistically available to Docker** | **≈ 11 GB** |
+
+Docker Desktop's WSL2 backend runs inside the **same** WSL VM memory pool, so the
+`.wslconfig` cap governs Ubuntu *and* `docker-desktop` *and* every container combined.
+
+Create `C:\Users\Munzib\.wslconfig`, then `wsl --shutdown` and reopen:
+
 ```ini
 [wsl2]
-memory=12GB
+memory=11GB
 processors=12
-swap=4GB
+swap=8GB
 ```
-Without this, WSL2 claims up to half the host RAM by default and Docker Desktop's `vmmem` can balloon until the machine stalls mid-demo.
+
+`swap=8GB` (raised from the usual 4) is deliberate: it is a safety net so a brief
+over-commit degrades into slow rather than into an OOM kill mid-demo. **Do not plan to
+run in swap** — Kafka and Cassandra behave badly there — but having it prevents a
+catastrophic failure while recording.
+
+### 0.3 Disk, network and CPU are not constraints
+
+| Resource | Status |
+|---|---|
+| C: drive | 634 GB free |
+| D: drive | 369 GB free |
+| WSL ext4 | 853 GB free |
+| Docker Hub / PyPI | reachable |
+| CPU | 16 logical cores |
+
+### 0.4 Host tooling already present
+
+Verified installed: `pdflatex`, `lualatex`, `latexmk`, `texlive-latex-extra`,
+`texlive-pictures`, `texlive-science` (so `tikz`, `pgfplots`, `tcolorbox`, `fontspec`,
+`booktabs`, `hyperref` all resolve); **`drawio` 30.3.11** with WSLg running
+(`DISPLAY=:0`) plus `xvfb-run` for headless export; cairo/pango/gdk-pixbuf for
+WeasyPrint; Python 3.12.3 with `uv` 0.11.25; Node v20.20.2.
+
+Missing and worth installing before day 12:
+
+```bash
+npm i -g @mermaid-js/mermaid-cli          # mmdc, for the sequence diagrams
+sudo apt install -y texlive-fonts-extra   # inconsolata, Fira (cosmetic; will prompt for password)
+```
+
+Not needed on Linux: video capture — record the browser with Windows Game Bar (Win+G)
+or OBS on the Windows side.
+
+**No passwordless sudo** on this machine, so any `apt install` will prompt.
+**No `gh` CLI and no GitHub SSH key** — the submission asks for a Git repository link,
+so set up GitHub authentication or plan to submit a zip archive.
 
 ---
 
@@ -39,13 +96,14 @@ Two files: `compose.yaml` (pipeline) and `compose.observability.yaml`, combined 
 | `kafka-ui` | `provectuslabs/kafka-ui:v0.7.2` | **8180** | 384 M | `curl /actuator/health` |
 | **`cassandra`** | `cassandra:4.1` | 9142 | **2.0 G** | `cqlsh -e "describe keyspaces"` |
 | `postgres-airflow` | `postgres:16-alpine` | 5533 | 256 M | `pg_isready` |
-| `spark-master` | `bitnami/spark:3.5.1` | 7177, **8190** | 512 M | port check |
-| `spark-worker-1/2` | `bitnami/spark:3.5.1` | — | 1.5 G each | port check |
+| `spark-master` *(`full` profile only)* | `bitnami/spark:3.5.1` | 7177, **8190** | 512 M | port check |
+| `spark-worker-1/2` *(`full` profile only)* | `bitnami/spark:3.5.1` | — | 1.5 G each | port check |
 | `airflow-webserver` | `apache/airflow:2.9.3-python3.11` | **8182** | 768 M | `curl /health` |
 | `airflow-scheduler` | `apache/airflow:2.9.3-python3.11` | — | 768 M | `airflow jobs check` |
 | `bedside-monitor` | build `./docker/producer` | 8101 | 256 M | `curl /health` |
 | `lab-uploader` | build `./docker/producer` | 8102 | 256 M | `curl /health` |
-| `ward-stream` | build `./docker/spark-app` | 4140 | 1.0 G | driver port |
+| `ward-stream` | build `./docker/spark-app` | **4140** | 1.5 G | driver port |
+|  ↳ runs `master("local[4]")` by default; joins the cluster only under `make up-full` — see §1.3 | | | | |
 | `api` | build `./docker/api` | **8100** | 256 M | `curl /health/live` |
 | `init` (one-shot) | build `./docker/init` | — | 128 M | — |
 
@@ -67,26 +125,64 @@ Two files: `compose.yaml` (pipeline) and `compose.observability.yaml`, combined 
 | `alert-sink` | build | 8103 | 128 M |
 | `loki` + `promtail` *(stretch)* | `grafana/loki:3.0.0` | 3200 | 512 M |
 
-### 1.3 Memory budget
+### 1.3 Memory budget — profiles, because 11 GB is the ceiling
 
-| Group | Total |
-|---|---|
-| Kafka + Schema Registry + UI + exporter | ~2.5 G |
-| **Cassandra (+ JMX exporter)** | ~2.2 G |
-| Spark (master + 2 workers + app) | ~4.5 G |
-| Airflow (web + scheduler + metadata DB) | ~1.8 G |
-| Producers + API + init | ~0.9 G |
-| Observability | ~1.9 G |
-| **Total (no Loki, the default)** | **≈ 13.8 G** |
+The full stack as originally specced is ~13.8 GB, which **does not fit** in the ~11 GB
+Docker can realistically have on this 15.6 GB host (§0.2). Cassandra's 2 GB makes this
+project the tighter of the two. The compose file is therefore organised into **profiles**,
+and the default is deliberately not the maximum.
 
-Against 14 GB with WSL capped at 12 GB this is **over budget**, so the defaults are tuned down:
+| Profile | Command | Services | RAM |
+|---|---|---|---|
+| **core** | `make up-core` | Kafka, Schema Registry, **Cassandra**, producers, **Spark in local mode**, API, init | **≈ 6.1 G** |
+| **run** (default) | `make up` | core + Kafka UI + Airflow (webserver, scheduler, metadata DB) | **≈ 8.7 G** |
+| **obs** | `make up-obs` | run + Prometheus, Pushgateway, Alertmanager, Grafana, kafka-exporter, JMX exporter | **≈ 10.4 G** |
+| **full** | `make up-full` | obs + OTel Collector + Jaeger + a standalone Spark master/worker pair | **≈ 12.9 G** |
 
-1. **Run only one project's stack at a time.** `make down` before switching to `../ride-hailing-lambda`.
-2. **`make up` uses a single Spark worker (2 G)** rather than two — saving 1.5 G. Two workers are available via `make up-full` for a throughput demonstration.
-3. Loki is off by default (`COMPOSE_PROFILES`).
-4. Every service has an explicit `mem_limit`. **Without limits, Cassandra and the Spark/Kafka JVMs size their heaps from *host* RAM and collectively over-commit** — this is the most common cause of a stack that runs for ten minutes and then dies.
+`make up-full` **exceeds the cap by design** and is meant to be run briefly, on its own, to
+capture the Jaeger and Spark-cluster screenshots — then dropped back to `up-obs`.
 
-Tuned default: **≈ 12.3 G**.
+#### The change that buys the most: Spark in local mode
+
+Dropping the separate `spark-master` + two `spark-worker` containers (~3.5 G) and running
+the single streaming job as `SparkSession.builder.master("local[4]")` inside the app
+container (1.5 G) is the largest saving available.
+
+It costs nothing that matters, and the report should say so plainly:
+
+- Structured Streaming semantics are **identical** — same windowing, watermarking,
+  checkpointing, state handling and `foreachBatch` sink behaviour.
+- The **Spark UI still serves on 4040**, so the Structured Streaming screenshot is unaffected.
+- **The replay is unaffected**, which is the point that matters most here: replay parallelism
+  is bounded by Kafka partitions and local cores, and 115,000 events over 4 local cores still
+  completes in seconds. The headline Kappa number in the report survives intact.
+- Distributed execution is shown separately via `make up-full` for one screenshot.
+- At 13 events/second, local mode is nowhere near the bottleneck.
+
+#### Cassandra keeps its full allocation
+
+Do **not** trim Cassandra below `MAX_HEAP_SIZE=1G` / `mem_limit: 2g` (§1.4). It is the
+serving store, it is the component most likely to destabilise the stack, and an
+under-heaped Cassandra fails in confusing ways under write load. If memory must be found,
+take it from Spark or the observability profile — never from Cassandra.
+
+#### Other trims applied to the defaults
+
+| Trim | Saves | Cost |
+|---|---|---|
+| `KAFKA_HEAP_OPTS=-Xmx768m` (else the JVM sizes from host RAM) | ~700 M | none |
+| Loki/Promtail off by default | ~512 M | log aggregation is a stretch goal |
+| Jaeger + OTel Collector only in `full` | ~640 M | tracing screenshots in one dedicated session |
+| JMX + kafka exporters only in `obs` and above | ~320 M | none |
+| Ward size 40 → 30 **if still tight** | ~0 (RAM) | last resort; update the stated figures everywhere |
+
+#### Non-negotiable operating rule
+
+**Only one project's stack may be up at a time.** `make down` here before `make up` in
+`../ride-hailing-lambda`. Distinct host port ranges (§1.1) make a collision fail loudly,
+but the two cannot coexist in memory.
+
+`make mem` prints current container memory against the budget so drift is visible.
 
 ### 1.4 Cassandra tuning — do this on day 3, not on demo day
 
@@ -215,8 +311,11 @@ def snapshot_ttl_must_exceed_trigger(self):
 
 ```
 make setup              # check docker, copy .env.example, pull images
-make up                 # full stack (1 spark worker)
-make up-full            # 2 spark workers
+make up-core            # ~6.1 G  pipeline only, Spark local mode
+make up                 # ~8.7 G  + Kafka UI + Airflow      (DEFAULT)
+make up-obs             # ~10.4 G + Prometheus/Grafana/Alertmanager
+make up-full            # ~12.9 G + Jaeger/OTel + Spark cluster (screenshots only)
+make mem                # current container memory vs the budget
 make down               # stop, keep volumes
 make clean              # stop and DELETE volumes (fixes KRaft/Cassandra id issues)
 make logs SVC=api
