@@ -241,7 +241,109 @@ spark-master ─▶ spark-worker-* ─────────┼──▶ ward-
 
 ---
 
-## 4. Configuration management
+## 4. Data lifecycle — what persists, what expires, what to do between runs
+
+**All data in this project is generated, not loaded.** There is no seed dataset; the bedside
+monitors and the lab uploader invent readings and results continuously while the stack runs.
+Nothing exists before `make up`, and everything downstream is rebuildable from the Kafka log.
+
+### 4.1 Where state lives
+
+| Volume | Holds | Survives `make down`? | Survives `make clean`? |
+|---|---|---|---|
+| `kafka-data` | **The system of record** — every vitals reading, plus the compacted labs and admissions topics | Yes | No |
+| `cassandra-data` | All serving tables (vitals, scores, snapshot, alerts, labs, daily summary) | Yes | No |
+| `postgres-airflow-data` | Airflow DAG run history | Yes | No |
+| `spark-checkpoints` | Streaming offsets and state store | Yes | No |
+| `prometheus-data`, `grafana-data` | Metric history, dashboard state | Yes | No |
+| `./labs/inbox/` (bind mount) | Dropped lab files | Yes | Cleared by `make clean` |
+| `./state/sim_epoch.json` (bind mount) | The simulated-clock anchor | Yes | Removed by `make clean` |
+
+Note the asymmetry with the sibling Lambda project: **here Kafka is the system of record**, and
+Cassandra holds only materialised views. Wiping Cassandra while keeping Kafka is recoverable —
+replay rebuilds it. Wiping Kafka is not.
+
+### 4.2 Data that expires on purpose while running
+
+Designed behaviour, and in one case a safety mechanism:
+
+| What | Lifetime | Why |
+|---|---|---|
+| Kafka vitals | 30 simulated days (3 h real, `04 §1.4`) | **This is the replay horizon.** Retention defines how far back history can be re-derived. |
+| `labs.results`, `ward.admissions` | Never — **compacted**, latest per key kept forever | They are tables, not event histories (`04 §1.3`) |
+| `vitals_by_patient`, `risk_scores_by_patient`, `alerts_by_ward` | Cassandra TTL, 3 h real (= 30 simulated days) | Retention enforced by the database, not a cleanup job |
+| **`ward_risk_snapshot`** | **120 seconds** | **A safety mechanism, not cleanup.** If the stream stops, the ward monitor **empties** within 2 minutes rather than freezing on stale values. A blank screen is unmistakably broken; a frozen screen looks like a ward of stable patients (`07 §3`, `09 §1`). |
+
+### 4.3 ★ The restart rule: every run starts fresh ★
+
+**`make clean && make up` is the default way to start.** Not `make down && make up`.
+
+Every run begins at simulated `2026-04-01` (day 1). If the previous run's rows are still in
+Cassandra, a new run writes a *second* day 1 over the top. Because `scored_at` is part of the
+clustering key, the old and new rows **coexist rather than overwriting**, so a patient's risk
+history shows two interleaved timelines, the trend slopes are nonsense, and the replay diff
+compares across runs. Screenshots taken in that state are unusable.
+
+**The init container enforces this.** On start-up it checks for evidence of a previous run
+(`./state/sim_epoch.json` present, or rows in `ward.risk_scores_by_patient`) and:
+
+```
+ERROR: existing simulation data found (sim_epoch dated 2026-08-18T14:02:11Z,
+       3840 rows in ward.risk_scores_by_patient).
+
+Starting a new run over old data interleaves two timelines per patient.
+
+  make clean && make up     start fresh (recommended)
+  RESUME=1 make up          continue the previous run, reusing the stored clock epoch
+```
+
+`RESUME=1` re-reads the stored epoch instead of writing a new one. **Use it only when
+restarting a single crashed service mid-session**, never to begin a fresh demo.
+
+Failing loudly is deliberate: silently interleaving two simulated timelines is the kind of bug
+that costs an afternoon, because nothing errors — the risk trends are just quietly wrong.
+
+### 4.4 What survives a Cassandra wipe — the Kappa payoff
+
+Worth a sentence in the report, because it is the architecture paying off operationally:
+
+```
+make clean-serving      # wipes Cassandra only, leaves Kafka intact
+make replay VERSION=v2  # rebuilds every table from the log
+```
+
+Under Kappa the serving store is disposable — it is a projection of the log, and replay
+regenerates it. The sibling Lambda project cannot do this for its PostgreSQL mart, because
+the mart holds the join with the daily expense files rather than a pure projection of a stream.
+
+### 4.5 Why a fresh start costs you nothing
+
+`RANDOM_SEED=42` is fixed, so **every fresh run generates byte-identical data**. `P014`
+deteriorates at the same simulated moment, `P031`'s COPD readings are the same, `P007`'s
+transient spike lands at the same point, and the day-5 lab file is missing every time.
+
+That reproducibility is asserted by `tests/unit/test_determinism.py` and
+`test_deterioration_e2e.py` (`03 §6`). A marker re-running your submission sees exactly what
+your report shows — including the replay diff, which always reports the same six COPD patients.
+
+### 4.6 Practical guidance
+
+| Situation | Command |
+|---|---|
+| Starting a demo, or capturing screenshots | `make clean && make up` |
+| Recording the video | `make clean && make up`, wait ~6 min (Cassandra is slow), then record |
+| Restarting one crashed service mid-session | `docker compose restart <svc>` (clock untouched) |
+| Restarting the whole stack, keeping progress | `make down && RESUME=1 make up` |
+| Rebuilding the serving store from the log | `make clean-serving && make replay VERSION=v2` |
+| Changing the streaming aggregation | `make reset-checkpoint` first — checkpoints are invalidated by logic changes (`05 §8`) |
+| Reclaiming disk after several runs | `make clean` then `docker system prune -f` |
+
+Disk note: a 3-simulated-day run produces roughly 30 MB of Kafka log and under 100 MB in
+Cassandra. Runs do not accumulate unless you avoid `make clean`.
+
+---
+
+## 5. Configuration management
 
 Single source of truth: **`.env`** (`.env.example` committed, `.env` git-ignored). No secrets or hostnames in code.
 
@@ -307,7 +409,7 @@ def snapshot_ttl_must_exceed_trigger(self):
 
 ---
 
-## 5. Makefile
+## 6. Makefile
 
 ```
 make setup              # check docker, copy .env.example, pull images
@@ -317,7 +419,9 @@ make up-obs             # ~10.4 G + Prometheus/Grafana/Alertmanager
 make up-full            # ~12.9 G + Jaeger/OTel + Spark cluster (screenshots only)
 make mem                # current container memory vs the budget
 make down               # stop, keep volumes
-make clean              # stop and DELETE volumes (fixes KRaft/Cassandra id issues)
+make clean              # stop and DELETE all data  <-- the normal way to start a run (§4.3)
+make clean-serving      # wipe Cassandra ONLY, keep the Kafka log (rebuild via replay, §4.4)
+make reset-checkpoint   # clear Spark checkpoints only (after changing streaming logic)
 make logs SVC=api
 make ps · make ports
 
@@ -343,7 +447,7 @@ make report             # regenerate the daily report for the latest simulated d
 
 ---
 
-## 6. Reproducibility checklist
+## 7. Reproducibility checklist
 
 - [ ] `git clone` → `make setup` → `make up` → healthy within 4 minutes (Cassandra is the long pole)
 - [ ] No manual UI steps (no hand-created Airflow connections, no hand-added Grafana dashboards)
@@ -359,7 +463,7 @@ make report             # regenerate the daily report for the latest simulated d
 
 ---
 
-## 7. README structure
+## 8. README structure
 
 1. **What this is** — one paragraph + architecture diagram
 2. **⚠ Safety disclaimer** — simulated data, not a medical device (must be prominent)
