@@ -35,8 +35,8 @@ def _add_sim_time(_logger: Any, _name: str, event_dict: dict[str, Any]) -> dict[
     logs before it has written one.
     """
     try:
-        from ward.common import config
-        from ward.common.simclock import read_anchor
+        from ward import settings as config
+        from ward.simclock import read_anchor
 
         clock = read_anchor(__import__("pathlib").Path(config.sim().state_path))
         now = clock.sim_now()

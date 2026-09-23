@@ -224,8 +224,8 @@ def push_gauges(job: str, values: dict[str, float], grouping: dict[str, str] | N
     from prometheus_client import CollectorRegistry, push_to_gateway
     from prometheus_client import Gauge as _Gauge
 
-    from ward.common import config
-    from ward.common.logging import get_logger
+    from ward import settings as config
+    from ward.obs.log import get_logger
 
     registry = CollectorRegistry()
     for name, value in values.items():

@@ -13,14 +13,13 @@ reading is not. A bedside monitor that keeps measuring while the network is down
 then delivers late is behaving correctly; one that forgets is not.
 """
 
-
 from __future__ import annotations
 
 from typing import Any
 
 from confluent_kafka import Producer
 
-from ward.common import config
+from ward import settings as config
 
 
 def producer_config(client_id: str) -> dict[str, Any]:
