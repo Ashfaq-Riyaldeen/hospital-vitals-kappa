@@ -23,6 +23,11 @@ from ward.producers.physiology.walk import VitalsState
 # The scripted patients need a specific condition for their narrative to make sense —
 # P031's COPD is what makes Scale 2 apply, and P014's sepsis_risk gives the slightly
 # lower systolic baseline that the trajectory starts from.
+# Proportion of patients on supplemental oxygen at any moment. Higher for COPD, but
+# far from all of them - most are on air at rest.
+OXYGEN_PROBABILITY_COPD = 0.35
+OXYGEN_PROBABILITY_OTHER = 0.05
+
 SCRIPTED_CONDITIONS = {
     SEPSIS_PATIENT: "sepsis_risk",
     COPD_PATIENT: "copd",
@@ -42,6 +47,7 @@ class Patient:
     sex: str
     condition: str
     copd_scale2: bool
+    on_supplemental_oxygen: bool
     baseline: Baseline
     state: VitalsState
     admitted_at: datetime
@@ -73,6 +79,16 @@ def build_ward(beds: int, admitted_at: datetime, seed: int) -> list[Patient]:
                 # patient flagged for Scale 2 without COPD physiology, or the
                 # reverse, would make the replay's expected diff incoherent.
                 copd_scale2=condition == "copd",
+                # NOT every COPD patient is on oxygen, and tying the two together
+                # was a modelling error: supplemental oxygen scores +2 on NEWS2, so
+                # a blanket rule put a permanent +2 on every COPD patient and left
+                # all eleven of them sitting at MEDIUM risk. The ward dashboard was
+                # red before anything had happened, and P014's actual deterioration
+                # would not have stood out against it.
+                on_supplemental_oxygen=(
+                    rng.random()
+                    < (OXYGEN_PROBABILITY_COPD if condition == "copd" else OXYGEN_PROBABILITY_OTHER)
+                ),
                 baseline=baseline,
                 state=VitalsState.at_baseline(baseline),
                 admitted_at=admitted_at,

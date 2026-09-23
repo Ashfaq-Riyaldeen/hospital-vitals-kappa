@@ -161,3 +161,122 @@ def test_injected_values_are_physiologically_impossible_not_merely_abnormal() ->
 def test_future_timestamp_is_two_simulated_hours_ahead() -> None:
     now = datetime(2026, 4, 2, 12, 0, tzinfo=UTC)
     assert (defects.future_timestamp(now) - now).total_seconds() == 2 * 3600
+
+
+# ------------------------------------------------- the ward must start calm
+
+class TestTheWardIsCalmBeforeAnythingHappens:
+    """★ Added after an end-to-end run showed the opposite.
+
+    Two modelling errors put the whole ward at MEDIUM/HIGH risk on day 1, with
+    nothing wrong with anybody:
+
+    1. `draw_baseline` had no plausibility guard, so a 3.5-sigma draw gave P031 a
+       baseline systolic of 81 mmHg. That scores 3 on every reading AND triggers the
+       hypotension coupling, dragging heart and respiratory rate up too. Mean NEWS2
+       10.0 for the patient whose whole purpose is to be stable.
+    2. `on_supplemental_oxygen` was tied 1:1 to COPD, which is not true clinically
+       and put a permanent +2 on eleven patients.
+
+    Neither raised anything. Both were only visible by scoring the generated data and
+    looking at the distribution -- which is what the end-to-end script is for.
+
+    The demo depends on this: if the ward sits red before anything happens, P014's
+    actual deterioration does not stand out and the demonstration proves nothing.
+    """
+
+    def _day_one_scores(self) -> dict[str, list[int]]:
+        from datetime import timedelta
+
+        from ward.clinical.news2 import score_news2
+        from ward.producers.physiology import narratives
+        from ward.producers.physiology.walk import step
+
+        out: dict[str, list[int]] = {}
+        for patient in ward():
+            rng = Random(SEED)
+            totals = []
+            for i in range(24):  # six simulated hours at 15-minute observations
+                now = ADMITTED + timedelta(minutes=15 * i)
+                patient.state = step(patient.state, patient.baseline, now, rng)
+                patient.state = narratives.apply(
+                    patient.state,
+                    narratives.NarrativeContext(patient.patient_id, now, ADMITTED),
+                )
+                totals.append(
+                    score_news2(
+                        respiratory_rate=round(patient.state.respiratory_rate),
+                        spo2=round(patient.state.spo2),
+                        on_supplemental_oxygen=patient.on_supplemental_oxygen,
+                        systolic_bp=round(patient.state.systolic_bp),
+                        heart_rate=round(patient.state.heart_rate),
+                        consciousness="A",
+                        temperature=patient.state.temperature,
+                        copd_scale2=patient.copd_scale2,
+                    ).total
+                )
+            out[patient.patient_id] = totals
+        return out
+
+    def test_nobody_is_at_high_risk_before_anything_happens(self) -> None:
+        """HIGH is an emergency response. Nobody should be there on day 1.
+
+        With the two bugs above, P031 averaged 10.0 -- comfortably HIGH -- so this
+        assertion is what would have caught them.
+        """
+        scores = self._day_one_scores()
+        offenders = {
+            pid: round(sum(t) / len(t), 1)
+            for pid, t in scores.items()
+            if sum(t) / len(t) >= 7
+        }
+        assert not offenders, f"patients averaging HIGH risk on day one: {offenders}"
+
+    def test_only_a_couple_of_patients_sit_at_medium(self) -> None:
+        """Not zero -- a real 40-bed ward has a patient or two needing closer
+        observation, and a simulation where everybody is perfectly well would be its
+        own kind of unrealistic. What matters is that the dashboard is not RED, so
+        P014's climb to HIGH stands out against it.
+
+        Before the fix this was eleven patients; the bound is set where a genuine
+        regression is still caught.
+        """
+        scores = self._day_one_scores()
+        at_medium = [pid for pid, t in scores.items() if sum(t) / len(t) >= 5]
+        assert len(at_medium) <= 2, (
+            f"{len(at_medium)} of {len(scores)} patients average MEDIUM before anything "
+            f"has happened: {at_medium}"
+        )
+
+    def test_the_ward_average_is_low(self) -> None:
+        scores = self._day_one_scores()
+        means = [sum(t) / len(t) for t in scores.values()]
+        ward_mean = sum(means) / len(means)
+        assert ward_mean < 3.0, f"ward mean NEWS2 is {ward_mean:.1f}; the dashboard would be red"
+
+    def test_baselines_are_physiologically_plausible(self) -> None:
+        """A baseline is a SET POINT, not an observation: it is where a patient sits
+        when nothing is wrong, so it must be a state a ward patient can be in."""
+        from ward.producers.physiology.baselines import PLAUSIBLE
+
+        for patient in ward():
+            for name, (low, high) in PLAUSIBLE.items():
+                value = getattr(patient.baseline, name)
+                assert low <= value <= high, (
+                    f"{patient.patient_id} baseline {name}={value:.1f} outside {low}-{high}"
+                )
+
+    def test_supplemental_oxygen_is_not_tied_one_to_one_to_copd(self) -> None:
+        """Oxygen scores +2 on NEWS2, so a blanket rule is worth two points on every
+        COPD patient forever. Most COPD patients are on air at rest."""
+        patients = ward()
+        copd = [p for p in patients if p.copd_scale2]
+        on_oxygen = [p for p in copd if p.on_supplemental_oxygen]
+        assert copd, "no COPD patients"
+        assert len(on_oxygen) < len(copd), "every COPD patient is on oxygen"
+
+    def test_diastolic_is_always_below_systolic(self) -> None:
+        """Systolic <= diastolic is a cuff error, not a patient. It must only ever
+        appear when the defect injector puts it there deliberately."""
+        for patient in ward():
+            assert patient.baseline.diastolic_bp < patient.baseline.systolic_bp

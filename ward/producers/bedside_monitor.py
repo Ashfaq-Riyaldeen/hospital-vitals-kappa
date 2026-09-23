@@ -100,7 +100,7 @@ class BedsideMonitors:
             # overwhelmingly "Alert", and inventing variation would put noise into a
             # NEWS2 parameter that scores 3 whenever it is anything else.
             "consciousness": None if empty else "A",
-            "on_supplemental_oxygen": patient.condition == "copd",
+            "on_supplemental_oxygen": patient.on_supplemental_oxygen,
             "producer_id": "bedside-monitor",
             "schema_version": 1,
         }
