@@ -1,0 +1,22 @@
+{
+  "type": "record",
+  "name": "DlqEnvelope",
+  "namespace": "ward.contracts",
+  "doc": "A rejected reading, with everything needed to trace it back to its exact position in the log and to attribute the fault to a device. A DLQ record that cannot be traced or replayed is a record nobody will ever act on.",
+  "fields": [
+    {"name": "original_payload", "type": "bytes", "doc": "The raw Avro bytes, unmodified."},
+    {"name": "rejection_reason", "type": "string", "doc": "e.g. SPO2_PROBE_DETACHED"},
+    {"name": "rejection_detail", "type": "string"},
+    {"name": "validator", "type": "string"},
+    {"name": "patient_id", "type": ["null", "string"], "default": null},
+    {"name": "device_id", "type": ["null", "string"], "default": null,
+     "doc": "Turns a data-quality metric into a ward-operations one: 'BED-22's probe keeps detaching'."},
+    {"name": "rejected_at_sim", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+    {"name": "rejected_at_real", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+    {"name": "source_topic", "type": "string"},
+    {"name": "source_partition", "type": "int"},
+    {"name": "source_offset", "type": "long",
+     "doc": "With partition, this is what makes a dead-lettered reading traceable to its exact log position - and therefore replayable."},
+    {"name": "trace_id", "type": ["null", "string"], "default": null}
+  ]
+}

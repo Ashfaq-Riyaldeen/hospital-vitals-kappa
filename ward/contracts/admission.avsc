@@ -1,0 +1,18 @@
+{
+  "type": "record",
+  "name": "Admission",
+  "namespace": "ward.contracts",
+  "doc": "Ward reference data, on a COMPACTED topic. Broadcast into the stream to enrich readings. copd_scale2 is the field that changes a clinical result rather than decorating it.",
+  "fields": [
+    {"name": "patient_id", "type": "string"},
+    {"name": "bed_id", "type": "string"},
+    {"name": "age", "type": "int"},
+    {"name": "sex", "type": "string"},
+    {"name": "primary_condition", "type": "string"},
+    {"name": "copd_scale2", "type": "boolean", "default": false,
+     "doc": "★ Patient has hypercapnic respiratory failure, so NEWS2 SpO2 Scale 2 applies. This is NOT cosmetic enrichment - it changes the score. See ward/clinical/news2.py."},
+    {"name": "admitted_at", "type": {"type": "long", "logicalType": "timestamp-millis"}},
+    {"name": "discharged_at", "type": ["null", {"type": "long", "logicalType": "timestamp-millis"}], "default": null},
+    {"name": "schema_version", "type": "int", "default": 1}
+  ]
+}

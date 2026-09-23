@@ -13,7 +13,6 @@ safety: in a ward monitor, "no alerts" and "the pipeline died" produce the same 
 screen. Several of these metrics exist specifically so the two can be told apart.
 """
 
-
 from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -94,22 +93,16 @@ clinical_alerts_emitted_total = Counter(
 lab_join_hit_rate = Gauge(
     "lab_join_hit_rate", "Fraction of scores enriched with a fresh lab result."
 )
-admissions_refresh_total = Counter(
-    "admissions_refresh_total", "Admissions broadcast reloads."
-)
+admissions_refresh_total = Counter("admissions_refresh_total", "Admissions broadcast reloads.")
 
 # --- storage -------------------------------------------------------------
 
 sink_writes_total = Counter("sink_writes_total", "Rows written to Cassandra.", ["table"])
-sink_write_errors_total = Counter(
-    "sink_write_errors_total", "Failed Cassandra writes.", ["table"]
-)
+sink_write_errors_total = Counter("sink_write_errors_total", "Failed Cassandra writes.", ["table"])
 
 # --- the simulated clock -------------------------------------------------
 
-sim_clock_day_index = Gauge(
-    "sim_clock_day_index", "Simulated days elapsed since the run started."
-)
+sim_clock_day_index = Gauge("sim_clock_day_index", "Simulated days elapsed since the run started.")
 sim_clock_drift_seconds = Gauge(
     "sim_clock_drift_seconds",
     "Difference between this process's simulated time and the shared anchor. Should "

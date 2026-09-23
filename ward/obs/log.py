@@ -12,7 +12,6 @@ alert-worthy line filed as INFO. `_reject_reserved_fields` must stay FIRST in th
 processor chain; anywhere else and the damage is already done by the time it runs.
 """
 
-
 from __future__ import annotations
 
 import logging

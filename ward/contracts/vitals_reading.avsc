@@ -1,0 +1,29 @@
+{
+  "type": "record",
+  "name": "VitalsReading",
+  "namespace": "ward.contracts",
+  "doc": "One observation from one bedside monitor. The system of record's unit of truth: everything downstream is derived from a stream of these and can be re-derived by replaying them.",
+  "fields": [
+    {"name": "reading_id", "type": "string", "doc": "UUID. Used to deduplicate on replay."},
+    {"name": "patient_id", "type": "string", "doc": "PARTITION KEY. Keyed on the patient because trend detection is a per-patient ordered computation - see plan/04 section 1.1."},
+    {"name": "bed_id", "type": "string"},
+    {"name": "device_id", "type": "string", "doc": "Which monitor produced this. Carried into the DLQ so faults attribute to a specific device."},
+
+    {"name": "measured_at", "type": {"type": "long", "logicalType": "timestamp-millis"},
+     "doc": "SIMULATED time the observation was taken. Drives windowing, watermarks and trend slopes. NOT interchangeable with ingest_time."},
+    {"name": "ingest_time", "type": {"type": "long", "logicalType": "timestamp-millis"},
+     "doc": "REAL wall-clock time it was published. Drives latency histograms and traces."},
+
+    {"name": "heart_rate", "type": ["null", "int"], "default": null, "doc": "beats/min"},
+    {"name": "spo2", "type": ["null", "int"], "default": null, "doc": "percent"},
+    {"name": "respiratory_rate", "type": ["null", "int"], "default": null, "doc": "breaths/min"},
+    {"name": "systolic_bp", "type": ["null", "int"], "default": null, "doc": "mmHg"},
+    {"name": "diastolic_bp", "type": ["null", "int"], "default": null, "doc": "mmHg"},
+    {"name": "temperature", "type": ["null", "double"], "default": null, "doc": "degrees CELSIUS"},
+    {"name": "consciousness", "type": ["null", "string"], "default": null, "doc": "ACVPU"},
+    {"name": "on_supplemental_oxygen", "type": "boolean", "default": false},
+
+    {"name": "producer_id", "type": "string"},
+    {"name": "schema_version", "type": "int", "default": 1}
+  ]
+}

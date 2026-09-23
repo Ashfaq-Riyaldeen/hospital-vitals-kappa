@@ -1,0 +1,63 @@
+{
+  "type": "record",
+  "name": "LabResult",
+  "namespace": "ward.contracts",
+  "doc": "One pathology result. Published to a COMPACTED topic keyed by patient|test_type, so the log converges to 'the latest result per patient per test' and republishing the same key is idempotent.",
+  "fields": [
+    {
+      "name": "patient_id",
+      "type": "string"
+    },
+    {
+      "name": "test_type",
+      "type": "string",
+      "doc": "LACTATE | WBC | CRP | CREATININE | HB"
+    },
+    {
+      "name": "result_value",
+      "type": "double"
+    },
+    {
+      "name": "unit",
+      "type": "string",
+      "doc": "mmol/L, x10^9/L, mg/L. The second units hazard in this project - a lactate in mg/dL read as mmol/L is off by ~9x."
+    },
+    {
+      "name": "reference_low",
+      "type": [
+        "null",
+        "double"
+      ],
+      "default": null
+    },
+    {
+      "name": "reference_high",
+      "type": [
+        "null",
+        "double"
+      ],
+      "default": null
+    },
+    {
+      "name": "collected_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "SIMULATED time the sample was taken."
+    },
+    {
+      "name": "reported_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "SIMULATED time the lab released it - always later than collected_at, often by hours."
+    },
+    {
+      "name": "schema_version",
+      "type": "int",
+      "default": 1
+    }
+  ]
+}
