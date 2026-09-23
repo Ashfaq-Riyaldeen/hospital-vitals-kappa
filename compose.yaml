@@ -130,5 +130,31 @@ services:
     mem_limit: 384m
     logging: *default-logging
 
+  # --- one-shot initialisation ------------------------------------------
+
+  init:
+    build: { context: ., dockerfile: docker/init/Dockerfile }
+    container_name: ward-init
+    depends_on:
+      kafka: { condition: service_healthy }
+      schema-registry: { condition: service_healthy }
+    env_file: [.env]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_SCHEMA_REGISTRY_URL: http://schema-registry:8181
+      SIM_STATE_PATH: /state/sim_epoch.json
+      # Passed through from the host shell. `init` refuses to run over an existing
+      # simulation - re-anchoring the clock mid-run makes simulated time jump
+      # backwards and Spark drops every later reading as impossibly late, with no
+      # error anywhere. RESUME=1 is the documented way past that guard, and without
+      # this line the guard's own message would advertise a flag that cannot reach
+      # the container.
+      RESUME: ${RESUME:-}
+    volumes:
+      - ./state:/state
+    restart: "no"
+    mem_limit: 256m
+    logging: *default-logging
+
 volumes:
   kafka-data:
