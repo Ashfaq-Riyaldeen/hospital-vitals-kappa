@@ -265,29 +265,56 @@ def test_every_parameter_missing_still_returns_a_result() -> None:
 # ------------------------------------------------------------------ table shape
 
 
-@pytest.mark.parametrize(
-    ("name", "bands"),
-    [
-        ("respiratory_rate", RESPIRATORY_RATE),
-        ("spo2_scale_1", SPO2_SCALE_1),
-        ("spo2_scale_2_air", SPO2_SCALE_2_ON_AIR),
-        ("spo2_scale_2_oxygen", SPO2_SCALE_2_ON_OXYGEN),
-        ("systolic_bp", SYSTOLIC_BP),
-        ("heart_rate", HEART_RATE),
-        ("temperature", TEMPERATURE),
-    ],
-)
-def test_bands_are_ordered_contiguous_and_unbounded_at_both_ends(name: str, bands: tuple) -> None:
-    """A gap in the table would raise at runtime on a real patient.
+ALL_TABLES = [
+    ("respiratory_rate", RESPIRATORY_RATE, 1.0),
+    ("spo2_scale_1", SPO2_SCALE_1, 1.0),
+    ("spo2_scale_2_air", SPO2_SCALE_2_ON_AIR, 1.0),
+    ("spo2_scale_2_oxygen", SPO2_SCALE_2_ON_OXYGEN, 1.0),
+    ("systolic_bp", SYSTOLIC_BP, 1.0),
+    ("heart_rate", HEART_RATE, 1.0),
+    # Temperature is continuous, so it is swept far more finely than the others.
+    ("temperature", TEMPERATURE, 0.01),
+]
 
-    `_band_score` raises rather than returning 0 when nothing matches, so this test is
-    what turns that from a crash-in-production into a failing build.
-    """
+
+@pytest.mark.parametrize(
+    ("name", "bands", "_step"), ALL_TABLES, ids=[t[0] for t in ALL_TABLES]
+)
+def test_bands_are_ordered_and_unbounded_at_both_ends(
+    name: str, bands: tuple, _step: float
+) -> None:
     assert bands[0][0] is None, f"{name}: first band must be unbounded below"
     assert bands[-1][1] is None, f"{name}: last band must be unbounded above"
     for (_, prev_high, _), (next_low, _, _) in pairwise(bands):
         assert prev_high is not None and next_low is not None
-        assert next_low > prev_high, f"{name}: bands overlap at {prev_high}/{next_low}"
+        assert next_low >= prev_high, f"{name}: bands run backwards at {prev_high}/{next_low}"
+
+
+@pytest.mark.parametrize(
+    ("name", "bands", "step"), ALL_TABLES, ids=[t[0] for t in ALL_TABLES]
+)
+def test_no_value_in_the_plausible_range_falls_through_a_gap(
+    name: str, bands: tuple, step: float
+) -> None:
+    """★ A SWEEP, not an inspection.
+
+    The previous version of this test checked only that bands did not OVERLAP, and
+    passed happily on a temperature table with holes in it: the published RCP bands
+    read 35.1-36.0 and 36.1-38.0, which leaves 36.05 matching nothing. `_band_score`
+    raises on an unmatched value, so the sepsis narrative crashed the first time it
+    generated a continuous temperature.
+
+    Checking a property by walking the actual domain would have caught it; checking a
+    weaker property that happened to hold did not. Sweeping is the honest version.
+    """
+    from ward.clinical.news2 import _band_score
+
+    low = (bands[0][1] or 0) - 50
+    high = (bands[-1][0] or 0) + 50
+    value = low
+    while value <= high:
+        assert _band_score(value, bands) is not None, f"{name}: {value} fell through a gap"
+        value = round(value + step, 4)
 
 
 # --------------------------------------------------------- the architecture test

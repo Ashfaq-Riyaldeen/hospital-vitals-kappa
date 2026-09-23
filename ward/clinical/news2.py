@@ -107,12 +107,24 @@ HEART_RATE: Final[tuple[Band, ...]] = (
     (131, None, 3),
 )
 
+# Temperature is the only CONTINUOUS parameter here, and it is the one place the
+# published table cannot be transcribed literally.
+#
+# The RCP table reads 35.1-36.0, 36.1-38.0, 38.1-39.0 because a temperature is charted
+# to one decimal place. Encoded literally, those bands leave GAPS -- 36.05 degrees
+# matches nothing -- and a simulator producing continuous values walks straight into
+# them. Found exactly that way: the sepsis narrative raised on its first run.
+#
+# Each band's lower bound is therefore the previous band's upper bound. Because bands
+# are checked in order and the FIRST match wins, every published boundary value still
+# scores as the table says (36.0 -> 1, 38.0 -> 0, 39.0 -> 1) while the line is now
+# fully covered. Verified by a sweep test, not by inspection.
 TEMPERATURE: Final[tuple[Band, ...]] = (
     (None, 35.0, 3),
-    (35.1, 36.0, 1),
-    (36.1, 38.0, 0),
-    (38.1, 39.0, 1),
-    (39.1, None, 2),
+    (35.0, 36.0, 1),
+    (36.0, 38.0, 0),
+    (38.0, 39.0, 1),
+    (39.0, None, 2),
 )
 
 # Air scores nothing; supplemental oxygen scores 2. Needing oxygen is itself a sign of
