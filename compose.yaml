@@ -1,0 +1,134 @@
+# Hospital Patient Vital Signs Monitoring - Kappa architecture.
+#
+# NOTE THE FILENAME. This project uses the modern `compose.yaml`; the sibling
+# ride-hailing project uses `docker-compose.yml`. Together with the distinct port
+# range below, that keeps the two stacks unambiguous when both repos are open.
+#
+# PORT RANGE: this project lives on 91xx / 81xx / 31xx, the sibling on 90xx / 80xx /
+# 30xx. They cannot collide. They also cannot COEXIST - the host has 15.6 GB and
+# Docker gets ~11 GB, while each stack peaks near 10 GB. Bring one down first.
+#
+#   make up        Kafka, Schema Registry, Kafka UI, producers, Cassandra
+#   make up-obs    + Prometheus, Grafana, Alertmanager
+#
+# See plan/10 for the full service topology and the WSL2 notes.
+
+name: ward
+
+x-logging: &default-logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+
+  # --- the backbone -------------------------------------------------------
+  #
+  # Under Kappa, Kafka is the SYSTEM OF RECORD, not a transport. Everything
+  # downstream is a derived view that can be rebuilt by replaying this log, and
+  # `vitals.readings.v1`'s retention IS the historical store. That is why the
+  # volume below matters more here than it would in a Lambda stack, where the
+  # warehouse would be the durable copy.
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: ward-kafka
+    hostname: kafka
+    ports:
+      - "9192:9192"          # host access (localhost:9192)
+    environment:
+      # KRaft: no ZooKeeper. The module's material describes ZooKeeper as the
+      # coordination layer "before version 2.8"; we run 3.x, so its absence from
+      # the lecture diagram is by design rather than oversight. Declared in the
+      # report - see plan/02.
+      # A KRaft cluster id is 16 raw bytes base64url-encoded without padding -
+      # EXACTLY 22 characters. A readable string of the right-ish length is not
+      # accepted: the first attempt here used a hand-written 26-character id and
+      # the broker refused to start with 'too long to be decoded as a base64 UUID'.
+      # Pinned rather than generated so 'make clean && make up' rebuilds the same
+      # cluster identity instead of a new one each run.
+      CLUSTER_ID: eh1PPpwoS2qOXw0sGzpOXw
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:29093
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9192
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9192
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # ★ Auto-creation OFF. A typo in a topic name must fail loudly rather than
+      # silently create a topic with DEFAULT settings - which for `labs.results.v1`
+      # would mean `delete` instead of `compact`, and the lab join would quietly
+      # start losing results weeks later with nothing to point at.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # Without this the JVM sizes its heap from HOST ram and over-commits.
+      KAFKA_HEAP_OPTS: "-Xmx768m -Xms512m"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9192 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 30s
+    mem_limit: 1500m
+    logging: *default-logging
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.1
+    container_name: ward-schema-registry
+    hostname: schema-registry
+    depends_on:
+      kafka: { condition: service_healthy }
+    ports:
+      - "8181:8181"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8181
+      # BACKWARD: a new consumer can read old data. Correct here because the
+      # streaming job is redeployed far more often than the monitors are, and it is
+      # what lets a nullable field be added to a reading without a coordinated
+      # release. It is also what makes the replay in plan/06 safe: a v2 scorer reads
+      # v1 records off the retained log without a migration.
+      SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: backward
+      SCHEMA_REGISTRY_HEAP_OPTS: "-Xmx384m"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8181/subjects >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    mem_limit: 512m
+    logging: *default-logging
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:v0.7.2
+    container_name: ward-kafka-ui
+    depends_on:
+      kafka: { condition: service_healthy }
+      schema-registry: { condition: service_healthy }
+    ports:
+      - "8180:8080"
+    environment:
+      # The cluster NAME appears in every kafka-ui URL. Naming it `ward` rather than
+      # leaving the default means a reviewer opening the UI sees which project they
+      # are looking at - and it is what the URLs in the demo script assume.
+      KAFKA_CLUSTERS_0_NAME: ward
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8181
+      DYNAMIC_CONFIG_ENABLED: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    mem_limit: 384m
+    logging: *default-logging
+
+volumes:
+  kafka-data:
