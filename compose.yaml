@@ -184,5 +184,53 @@ services:
     mem_limit: 256m
     logging: *default-logging
 
+  lab-uploader:
+    build: { context: ., dockerfile: docker/producer/Dockerfile }
+    container_name: ward-lab-uploader
+    depends_on:
+      init: { condition: service_completed_successfully }
+    ports:
+      - "8102:8102"
+    env_file: [.env]
+    environment:
+      SIM_STATE_PATH: /state/sim_epoch.json
+      LAB_INBOX: /labs/inbox
+      OBS_SERVICE_NAME: lab-uploader
+      OBS_METRICS_PORT: 8102
+    volumes:
+      - ./state:/state:ro
+      # Bind-mounted so Airflow's FileSensor can watch the same directory the
+      # uploader writes to. The atomic rename inside the container is only atomic
+      # because both paths are on this one filesystem.
+      - ./labs/inbox:/labs/inbox
+    command: ["python", "-m", "ward.producers.lab_uploader"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8102/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *default-logging
+
+  # Publishes ward reference data once and exits. Compaction means a republished
+  # key simply replaces the old value, so this is safe to re-run at any time.
+  admissions:
+    build: { context: ., dockerfile: docker/producer/Dockerfile }
+    container_name: ward-admissions
+    depends_on:
+      init: { condition: service_completed_successfully }
+    env_file: [.env]
+    environment:
+      SIM_STATE_PATH: /state/sim_epoch.json
+      OBS_SERVICE_NAME: admissions
+    volumes:
+      - ./state:/state:ro
+    command: ["python", "-m", "ward.producers.admissions"]
+    restart: "no"
+    mem_limit: 256m
+    logging: *default-logging
+
 volumes:
   kafka-data:
