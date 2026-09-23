@@ -277,9 +277,7 @@ ALL_TABLES = [
 ]
 
 
-@pytest.mark.parametrize(
-    ("name", "bands", "_step"), ALL_TABLES, ids=[t[0] for t in ALL_TABLES]
-)
+@pytest.mark.parametrize(("name", "bands", "_step"), ALL_TABLES, ids=[t[0] for t in ALL_TABLES])
 def test_bands_are_ordered_and_unbounded_at_both_ends(
     name: str, bands: tuple, _step: float
 ) -> None:
@@ -290,9 +288,7 @@ def test_bands_are_ordered_and_unbounded_at_both_ends(
         assert next_low >= prev_high, f"{name}: bands run backwards at {prev_high}/{next_low}"
 
 
-@pytest.mark.parametrize(
-    ("name", "bands", "step"), ALL_TABLES, ids=[t[0] for t in ALL_TABLES]
-)
+@pytest.mark.parametrize(("name", "bands", "step"), ALL_TABLES, ids=[t[0] for t in ALL_TABLES])
 def test_no_value_in_the_plausible_range_falls_through_a_gap(
     name: str, bands: tuple, step: float
 ) -> None:
