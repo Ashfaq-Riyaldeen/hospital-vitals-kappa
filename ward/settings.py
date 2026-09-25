@@ -203,6 +203,9 @@ def storage() -> StorageSettings:
     return StorageSettings()
 
 
+store = storage
+
+
 @lru_cache(maxsize=1)
 def observability() -> ObservabilitySettings:
     return ObservabilitySettings()

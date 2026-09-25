@@ -632,3 +632,7 @@ class WardStoreDAO:
             )
         )
         self.session.execute(bound)
+
+
+# Backward-compatible alias
+CassandraDAO = WardStoreDAO

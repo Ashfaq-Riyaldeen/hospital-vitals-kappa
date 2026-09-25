@@ -64,6 +64,10 @@ def create_cluster(
     return cluster
 
 
+# Alias for backward compatibility
+get_cluster = create_cluster
+
+
 def get_session(
     keyspace: str | None = None,
     cluster: Cluster | None = None,

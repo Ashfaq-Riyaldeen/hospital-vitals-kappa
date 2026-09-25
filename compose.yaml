@@ -296,6 +296,35 @@ services:
     mem_limit: 1536m
     logging: *default-logging
 
+  # Serving Layer: FastAPI on port 8100
+  ward-api:
+    build: { context: ., dockerfile: docker/api/Dockerfile }
+    container_name: ward-api
+    depends_on:
+      cassandra: { condition: service_healthy }
+    ports:
+      - "8100:8100"
+    env_file: [.env]
+    environment:
+      STORE_CASSANDRA_HOSTS: cassandra
+      STORE_KEYSPACE: ward
+      SIM_STATE_PATH: /state/sim_epoch.json
+      OBS_SERVICE_NAME: ward-api
+      SCORER_VERSION: v1
+      REPORTS_DIR: /reports
+    volumes:
+      - ./state:/state:ro
+      - ./reports:/reports:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8100/health/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: 512m
+    logging: *default-logging
+
   # Orchestration Layer (Apache Airflow)
   #
   # Under Kappa, Airflow ONLY orchestrates episodic batch-like jobs around the stream:

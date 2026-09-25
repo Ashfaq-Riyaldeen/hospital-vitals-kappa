@@ -1,1 +1,1 @@
-"""Hospital patient vital signs monitoring — Kappa architecture pipeline."""
+"""Serving layer package for the hospital vitals monitoring platform."""
