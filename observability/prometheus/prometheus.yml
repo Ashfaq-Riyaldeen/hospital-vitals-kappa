@@ -1,0 +1,38 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+rule_files:
+  - "alerts.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "alertmanager:9193"
+
+scrape_configs:
+  - job_name: "ward-api"
+    static_configs:
+      - targets: ["ward-api:8100"]
+
+  - job_name: "spark-pushgateway"
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9191"]
+
+  - job_name: "kafka-exporter"
+    static_configs:
+      - targets: ["kafka-exporter:9309"]
+
+  - job_name: "statsd-exporter"
+    static_configs:
+      - targets: ["statsd-exporter:9202"]
+
+  - job_name: "bedside-monitor"
+    static_configs:
+      - targets: ["bedside-monitor:8101"]
+
+  - job_name: "lab-uploader"
+    static_configs:
+      - targets: ["lab-uploader:8102"]

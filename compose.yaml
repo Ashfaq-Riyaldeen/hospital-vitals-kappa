@@ -429,6 +429,55 @@ services:
     mem_limit: 900m
     logging: *default-logging
 
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: ward-prometheus
+    ports:
+      - "9190:9090"
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    restart: unless-stopped
+    mem_limit: 512m
+    logging: *default-logging
+
+  pushgateway:
+    image: prom/pushgateway:v1.9.0
+    container_name: ward-pushgateway
+    ports:
+      - "9191:9091"
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *default-logging
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: ward-alertmanager
+    ports:
+      - "9193:9093"
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *default-logging
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.7.0
+    container_name: ward-kafka-exporter
+    command:
+      - "--kafka.server=kafka:9092"
+    ports:
+      - "9309:9308"
+    depends_on:
+      kafka: { condition: service_healthy }
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *default-logging
+
 volumes:
   kafka-data:
   cassandra-data:

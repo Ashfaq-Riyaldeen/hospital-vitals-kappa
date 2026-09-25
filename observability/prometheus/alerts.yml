@@ -1,0 +1,52 @@
+groups:
+  - name: ward_pipeline_alerts
+    rules:
+      - alert: WardMonitoringSilent
+        expr: rate(risk_scores_written_total[3m]) == 0
+        for: 3m
+        labels:
+          severity: critical
+          category: clinical_safety
+        annotations:
+          summary: "Ward monitoring stream has produced zero risk scores for 3 minutes"
+          description: "Absence of alerts must never be mistaken for absence of risk. If risk scores stop being written, the ward monitor is blind."
+
+      - alert: NoVitalsIngested
+        expr: rate(readings_produced_total{status="ok"}[2m]) == 0
+        for: 3m
+        labels:
+          severity: critical
+          category: ingestion_failure
+        annotations:
+          summary: "No valid bedside vital signs ingested for 3 minutes"
+          description: "All 40 bedside monitors appear disconnected or Kafka ingestion has stalled."
+
+      - alert: HighDLQRate
+        expr: rate(readings_dlq_total[5m]) / rate(readings_validated_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          category: data_quality
+        annotations:
+          summary: "Dead Letter Queue rejection rate exceeds 5% of incoming readings"
+          description: "Malfunctioning sensor probes or unparseable frames detected."
+
+      - alert: StaleLabDataElevated
+        expr: serving_stale_labs_patients > 10
+        for: 5m
+        labels:
+          severity: warning
+          category: clinical_governance
+        annotations:
+          summary: "More than 10 ward patients are assessed on vitals alone without pathology corroboration"
+          description: "Lab result ingestion delay exceeds 2 simulated days."
+
+      - alert: ReplayLagHigh
+        expr: kafka_consumergroup_lag{group=~".*replay.*"} > 50000
+        for: 10m
+        labels:
+          severity: info
+          category: replay_reprocessing
+        annotations:
+          summary: "Kappa replay stream consumer lag remains elevated"
+          description: "Stream reprocessing is progressing through historical partitions."

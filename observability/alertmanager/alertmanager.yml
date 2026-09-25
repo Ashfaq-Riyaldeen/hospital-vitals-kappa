@@ -1,0 +1,25 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ["alertname", "category"]
+  group_wait: 10s
+  group_interval: 30s
+  repeat_interval: 2h
+  receiver: "devops-sre"
+  routes:
+    - match:
+        category: clinical_safety
+      receiver: "ward-safety-pager"
+      continue: true
+
+receivers:
+  - name: "devops-sre"
+    webhook_configs:
+      - url: "http://alert-sink:8103/pipeline-alerts"
+        send_resolved: true
+
+  - name: "ward-safety-pager"
+    webhook_configs:
+      - url: "http://alert-sink:8103/clinical-safety"
+        send_resolved: true
