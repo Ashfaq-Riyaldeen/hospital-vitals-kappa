@@ -12,7 +12,8 @@ WORKDIR /app
 RUN pip install --no-cache-dir \
       "confluent-kafka[avro,schemaregistry]>=2.4" \
       "pydantic>=2.7" "pydantic-settings>=2.3" \
-      "structlog>=24.1" "fastavro>=1.9" "prometheus-client>=0.20"
+      "structlog>=24.1" "fastavro>=1.9" "prometheus-client>=0.20" \
+      "cassandra-driver>=3.29"
 
 COPY ward/ /app/ward/
 COPY scripts/ /app/scripts/

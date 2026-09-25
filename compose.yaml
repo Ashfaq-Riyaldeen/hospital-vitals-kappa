@@ -130,6 +130,29 @@ services:
     mem_limit: 384m
     logging: *default-logging
 
+  cassandra:
+    image: cassandra:4.1
+    container_name: ward-cassandra
+    hostname: cassandra
+    ports:
+      - "9142:9042"
+    environment:
+      MAX_HEAP_SIZE: 1G
+      HEAP_NEWSIZE: 256M
+      CASSANDRA_CLUSTER_NAME: ward
+      CASSANDRA_DC: dc1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 90s
+    mem_limit: 2g
+    logging: *default-logging
+
   # --- one-shot initialisation ------------------------------------------
 
   init:
@@ -138,6 +161,7 @@ services:
     depends_on:
       kafka: { condition: service_healthy }
       schema-registry: { condition: service_healthy }
+      cassandra: { condition: service_healthy }
     env_file: [.env]
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
@@ -234,3 +258,4 @@ services:
 
 volumes:
   kafka-data:
+  cassandra-data:

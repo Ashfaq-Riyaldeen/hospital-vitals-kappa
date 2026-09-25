@@ -49,11 +49,14 @@ def main() -> int:
         return 2
 
     import create_topics
+    import init_cassandra
     import register_schemas
 
     if (rc := create_topics.main()) != 0:
         return rc
     if (rc := register_schemas.main()) != 0:
+        return rc
+    if (rc := init_cassandra.main()) != 0:
         return rc
 
     if not anchor_exists(state_path):
