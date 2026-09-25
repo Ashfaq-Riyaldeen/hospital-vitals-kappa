@@ -398,7 +398,11 @@ services:
     user: "0:0"
     command: scheduler
     healthcheck:
-      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $$(hostname)"]
+      test:
+        [
+          "CMD-SHELL",
+          "airflow jobs check --job-type SchedulerJob --hostname $$(hostname)",
+        ]
       interval: 20s
       timeout: 10s
       retries: 5
@@ -484,4 +488,3 @@ volumes:
   spark-checkpoints:
   postgres-airflow-data:
   airflow-logs:
-
