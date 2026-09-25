@@ -106,10 +106,37 @@ ports: ## What is listening where
 	@echo "  Cassandra     localhost:9142"
 	@echo "  monitors      http://localhost:8101/metrics"
 	@echo "  lab uploader  http://localhost:8102/metrics"
+	@echo "  Prometheus    http://localhost:9190"
+	@echo "  Alertmanager  http://localhost:9193"
 	@echo ""
 	@echo "  NOTE: 91xx/81xx deliberately avoid the sibling ride-hailing stack's"
 	@echo "        90xx/80xx. The two cannot run at the same time regardless -"
 	@echo "        each peaks near 10 GB of the ~11 GB Docker gets."
+
+# ---------------------------------------------------------------------------
+##@ Replay & Reprocessing (Kappa)
+
+VERSION ?= v2
+
+.PHONY: replay
+replay: ## Launch log replay for target scorer version (e.g. make replay VERSION=v2)
+	.venv/bin/python -m ward.replay.replay_runner --target-version $(VERSION)
+
+.PHONY: replay-status
+replay-status: ## Poll progress and lag of active replay consumer group
+	.venv/bin/python -m ward.replay.replay_runner --target-version $(VERSION) --wait
+
+.PHONY: diff
+diff: ## Generate clinical diff report between v1 and v2
+	.venv/bin/python -m ward.replay.compare_versions --v1 v1 --v2 $(VERSION)
+
+.PHONY: cutover
+cutover: ## Instantaneously switch active serving version (e.g. make cutover VERSION=v2)
+	.venv/bin/python -m ward.replay.cutover --version $(VERSION)
+
+.PHONY: rollback
+rollback: ## Roll back active serving version to v1
+	.venv/bin/python -m ward.replay.cutover --rollback
 
 # ---------------------------------------------------------------------------
 ##@ Verifying

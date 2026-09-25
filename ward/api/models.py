@@ -211,3 +211,18 @@ class PipelineStatusResponse(BaseAPIModel):
     active_scorer_version: str
     speedup_factor: float
     connected_services: dict[str, str]
+
+
+class CutoverRequest(BaseAPIModel):
+    """Request payload to switch or roll back active scorer version."""
+
+    target_version: str = Field(..., description="Target version (e.g. v2 or v1)")
+
+
+class CutoverResponse(BaseAPIModel):
+    """Result of an atomic scorer version cutover."""
+
+    status: str
+    previous_version: str
+    active_version: str
+    timestamp: datetime

@@ -24,6 +24,8 @@ from ward.api.models import (
     AlertAcknowledgeRequest,
     AlertAcknowledgeResponse,
     AlertItem,
+    CutoverRequest,
+    CutoverResponse,
     DailyReportMetaResponse,
     LabResultItem,
     PatientDetailResponse,
@@ -434,17 +436,47 @@ async def get_pipeline_vitals() -> PipelineStatusResponse:
         speedup = 288.0
 
     dao_status = "HEALTHY" if getattr(app.state, "dao", None) is not None else "OFFLINE"
+    active_v = getattr(app.state, "active_scorer_version", os.environ.get("SCORER_VERSION", "v1"))
 
     return PipelineStatusResponse(
         status="RUNNING",
         sim_now=s_now,
         sim_date=s_date,
-        active_scorer_version=os.environ.get("SCORER_VERSION", "v1"),
+        active_scorer_version=active_v,
         speedup_factor=speedup,
         connected_services={
             "cassandra": dao_status,
             "architecture": "Kappa",
         },
+    )
+
+
+@app.post(
+    "/api/v1/pipeline/cutover",
+    response_model=CutoverResponse,
+    summary="Cutover or Rollback Active Scorer Version",
+    tags=["Replay Validation"],
+)
+async def post_pipeline_cutover(
+    req: CutoverRequest,
+) -> CutoverResponse:
+    """Instantly switch or roll back the active scorer version served across the ward."""
+    prev = getattr(app.state, "active_scorer_version", os.environ.get("SCORER_VERSION", "v1"))
+    app.state.active_scorer_version = req.target_version
+
+    session = getattr(app.state, "session", None)
+    if session is not None:
+        try:
+            stmt = session.prepare("INSERT INTO ward.sim_state (key, value) VALUES (?, ?)")
+            session.execute(stmt.bind(("ACTIVE_SCORER_VERSION", req.target_version)))
+        except Exception:
+            pass
+
+    return CutoverResponse(
+        status="SUCCESS",
+        previous_version=prev,
+        active_version=req.target_version,
+        timestamp=utcnow(),
     )
 
 
