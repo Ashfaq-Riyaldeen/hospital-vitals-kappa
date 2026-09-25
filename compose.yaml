@@ -296,8 +296,114 @@ services:
     mem_limit: 1536m
     logging: *default-logging
 
+  # Orchestration Layer (Apache Airflow)
+  #
+  # Under Kappa, Airflow ONLY orchestrates episodic batch-like jobs around the stream:
+  # daily lab ingestion, daily report rendering, 30-day replay coordination, and liveness checks.
+  postgres-airflow:
+    image: postgres:16-alpine
+    container_name: ward-postgres-airflow
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres-airflow-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 200m
+    logging: *default-logging
+
+  airflow-init:
+    build: { context: ., dockerfile: docker/airflow/Dockerfile }
+    container_name: ward-airflow-init
+    depends_on:
+      postgres-airflow: { condition: service_healthy }
+    environment: &airflow-env
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow:5432/airflow
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+      AIRFLOW__LOGGING__JSON_FORMAT: "true"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.session
+      PYTHONPATH: /opt/airflow
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_SCHEMA_REGISTRY_URL: http://schema-registry:8181
+      CASSANDRA_CONTACT_POINTS: cassandra
+      CASSANDRA_PORT: 9042
+      CASSANDRA_KEYSPACE: ward
+      SIM_STATE_PATH: /state/sim_epoch.json
+      OBS_SERVICE_NAME: airflow
+    volumes: &airflow-volumes
+      - ./airflow/dags:/opt/airflow/dags:ro
+      - ./ward:/opt/airflow/ward:ro
+      - ./state:/state:ro
+      - ./labs:/labs
+      - ./reports:/reports
+      - airflow-logs:/opt/airflow/logs
+      - /var/run/docker.sock:/var/run/docker.sock
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create --username admin --password admin \
+          --firstname Ward --lastname Clinician --role Admin --email admin@ward.local || true
+    mem_limit: 900m
+    logging: *default-logging
+
+  airflow-scheduler:
+    build: { context: ., dockerfile: docker/airflow/Dockerfile }
+    container_name: ward-airflow-scheduler
+    depends_on:
+      airflow-init: { condition: service_completed_successfully }
+      cassandra: { condition: service_healthy }
+      kafka: { condition: service_healthy }
+    environment: *airflow-env
+    volumes: *airflow-volumes
+    user: "0:0"
+    command: scheduler
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --hostname $$(hostname)"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    mem_limit: 900m
+    logging: *default-logging
+
+  airflow-webserver:
+    build: { context: ., dockerfile: docker/airflow/Dockerfile }
+    container_name: ward-airflow-webserver
+    depends_on:
+      airflow-init: { condition: service_completed_successfully }
+    environment:
+      <<: *airflow-env
+      AIRFLOW__WEBSERVER__WORKERS: "2"
+      AIRFLOW__WEBSERVER__WORKER_REFRESH_BATCH_SIZE: "1"
+    volumes: *airflow-volumes
+    ports:
+      - "8182:8080" # Airflow UI on port 8182
+    command: webserver
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    mem_limit: 900m
+    logging: *default-logging
+
 volumes:
   kafka-data:
   cassandra-data:
   spark-checkpoints:
+  postgres-airflow-data:
+  airflow-logs:
 
