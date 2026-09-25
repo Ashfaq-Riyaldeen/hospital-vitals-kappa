@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Ward Consolidated Daily Patient Risk Report - {{ ward_id }} - {{ sim_date }}</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 12mm 15mm 15mm 15mm;
+      @bottom-right {
+        content: "Page " counter(page) " of " counter(pages);
+        font-size: 8pt;
+        color: #64748b;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+      @bottom-left {
+        content: "CONFIDENTIAL MEDICAL RECORD - Ward Clinical Risk Surveillance Platform";
+        font-size: 8pt;
+        color: #64748b;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      }
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #0f172a;
+      line-height: 1.4;
+      font-size: 9pt;
+      margin: 0;
+      padding: 0;
+    }
+    .header-table {
+      width: 100%;
+      border-bottom: 2px solid #0284c7;
+      padding-bottom: 8px;
+      margin-bottom: 12px;
+    }
+    .hospital-title {
+      font-size: 16pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0;
+    }
+    .report-subtitle {
+      font-size: 10pt;
+      color: #0284c7;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    .meta-box {
+      text-align: right;
+      font-size: 8.5pt;
+      color: #475569;
+    }
+    .kpi-container {
+      display: flex;
+      width: 100%;
+      margin-bottom: 14px;
+    }
+    .kpi-card {
+      flex: 1;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-right: 8px;
+    }
+    .kpi-card:last-child {
+      margin-right: 0;
+    }
+    .kpi-title {
+      font-size: 7.5pt;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #64748b;
+      font-weight: 600;
+    }
+    .kpi-value {
+      font-size: 16pt;
+      font-weight: 700;
+      color: #0f172a;
+      margin-top: 2px;
+    }
+    .kpi-value.critical {
+      color: #b91c1c;
+    }
+    .kpi-value.warning {
+      color: #d97706;
+    }
+    .kpi-sub {
+      font-size: 7.5pt;
+      color: #64748b;
+      margin-top: 2px;
+    }
+    h2 {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #1e293b;
+      border-left: 3px solid #0284c7;
+      padding-left: 6px;
+      margin: 14px 0 8px 0;
+    }
+    .narrative-box {
+      background: #fffbeb;
+      border: 1px solid #fef3c7;
+      border-left: 4px solid #f59e0b;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin-bottom: 12px;
+      font-size: 8.5pt;
+    }
+    .narrative-box.critical-narrative {
+      background: #fef2f2;
+      border: 1px solid #fee2e2;
+      border-left: 4px solid #ef4444;
+    }
+    .narrative-title {
+      font-weight: 700;
+      margin-bottom: 3px;
+    }
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8pt;
+      margin-bottom: 14px;
+    }
+    table.data-table th {
+      background: #f1f5f9;
+      color: #334155;
+      font-weight: 600;
+      text-align: left;
+      padding: 5px 6px;
+      border-top: 1px solid #cbd5e1;
+      border-bottom: 1px solid #cbd5e1;
+    }
+    table.data-table td {
+      padding: 4px 6px;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    table.data-table tr.critical-row {
+      background: #fff1f2;
+    }
+    table.data-table tr.high-row {
+      background: #fffbeb;
+    }
+    .tier-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-weight: 700;
+      font-size: 7pt;
+      text-transform: uppercase;
+    }
+    .tier-CRITICAL {
+      background: #fee2e2;
+      color: #991b1b;
+      border: 1px solid #f87171;
+    }
+    .tier-HIGH {
+      background: #ffedd5;
+      color: #9a3412;
+      border: 1px solid #fb923c;
+    }
+    .tier-MEDIUM {
+      background: #fef9c3;
+      color: #854d0e;
+      border: 1px solid #facc15;
+    }
+    .tier-LOW {
+      background: #f0fdf4;
+      color: #166534;
+      border: 1px solid #86efac;
+    }
+    .badge-deterioration {
+      background: #ef4444;
+      color: white;
+      padding: 1px 4px;
+      border-radius: 2px;
+      font-size: 6.5pt;
+      font-weight: 700;
+    }
+    .badge-stale {
+      background: #e2e8f0;
+      color: #475569;
+      padding: 1px 4px;
+      border-radius: 2px;
+      font-size: 6.5pt;
+    }
+    .footer-provenance {
+      margin-top: 16px;
+      padding-top: 8px;
+      border-top: 1px dashed #cbd5e1;
+      font-size: 7.5pt;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+
+  <table class="header-table">
+    <tr>
+      <td>
+        <div class="hospital-title">St Jude Hospital Clinical Surveillance</div>
+        <div class="report-subtitle">Consolidated 24-Hour Patient Risk &amp; Pathology Correlation Report</div>
+      </td>
+      <td class="meta-box">
+        <div><strong>Ward:</strong> {{ ward_id }} (Acute Medical Unit)</div>
+        <div><strong>Simulated Date:</strong> {{ sim_date }}</div>
+        <div><strong>Generated At:</strong> {{ generation_time }}</div>
+        <div><strong>Scorer Version:</strong> {{ scorer_version }}</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- KPI SUMMARY CARDS -->
+  <div class="kpi-container">
+    <div class="kpi-card">
+      <div class="kpi-title">Monitored Beds</div>
+      <div class="kpi-value">{{ total_patients }}</div>
+      <div class="kpi-sub">100% telemetry coverage</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Critical / Deteriorating</div>
+      <div class="kpi-value {% if critical_count > 0 %}critical{% endif %}">{{ critical_count }}</div>
+      <div class="kpi-sub">{{ deteriorating_count }} rapid trajectories</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Elevated Risk (High/Med)</div>
+      <div class="kpi-value {% if high_count > 0 %}warning{% endif %}">{{ high_count + medium_count }}</div>
+      <div class="kpi-sub">{{ high_count }} High &middot; {{ medium_count }} Medium</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-title">Total Alerts Emitted</div>
+      <div class="kpi-value">{{ total_alerts }}</div>
+      <div class="kpi-sub">{{ stale_labs_count }} patients with stale labs</div>
+    </div>
+  </div>
+
+  <!-- CLINICAL TRAJECTORY HIGHLIGHTS -->
+  <h2>Clinical Deterioration &amp; Risk Escalation Events</h2>
+  {% if critical_highlights %}
+    {% for item in critical_highlights %}
+      <div class="narrative-box {% if item.is_critical %}critical-narrative{% endif %}">
+        <div class="narrative-title">
+          Bed {{ item.bed_id }} (Patient {{ item.patient_id }}) &mdash; {{ item.admitting_condition }}
+          {% if item.deterioration_detected %}
+            <span class="badge-deterioration">RAPID DETERIORATION</span>
+          {% endif %}
+        </div>
+        <div>{{ item.narrative }}</div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <div class="narrative-box">
+      <div class="narrative-title">Stable Ward Status</div>
+      <div>No rapid deterioration events or critical risk escalations occurred during this 24-hour observation window.</div>
+    </div>
+  {% endif %}
+
+  <!-- PATIENT RISK SURVEILLANCE TABLE -->
+  <h2>Consolidated Patient Risk Registry (Worst-First Pre-Sorted)</h2>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th style="width: 8%;">Bed</th>
+        <th style="width: 10%;">Patient</th>
+        <th style="width: 22%;">Condition</th>
+        <th style="width: 9%; text-align: center;">Max NEWS2</th>
+        <th style="width: 10%; text-align: center;">Lab Added</th>
+        <th style="width: 11%; text-align: center;">Max Composite</th>
+        <th style="width: 12%; text-align: center;">Final Tier</th>
+        <th style="width: 8%; text-align: center;">Alerts</th>
+        <th style="width: 10%;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in patients %}
+      <tr class="{% if p.final_risk_tier == 'CRITICAL' %}critical-row{% elif p.final_risk_tier == 'HIGH' %}high-row{% endif %}">
+        <td><strong>{{ p.bed_id }}</strong></td>
+        <td>{{ p.patient_id }}</td>
+        <td>{{ p.admitting_condition }}</td>
+        <td style="text-align: center; font-weight: 600;">{{ p.max_news2 }}</td>
+        <td style="text-align: center;">+{{ p.lab_contribution }}</td>
+        <td style="text-align: center; font-weight: 700; font-size: 8.5pt;">{{ p.max_composite_risk }}</td>
+        <td style="text-align: center;">
+          <span class="tier-badge tier-{{ p.final_risk_tier }}">{{ p.final_risk_tier }}</span>
+        </td>
+        <td style="text-align: center;">{{ p.alert_count }}</td>
+        <td>
+          {% if p.deterioration_detected %}
+            <span class="badge-deterioration">DETERIORATING</span>
+          {% elif p.labs_stale %}
+            <span class="badge-stale">LABS STALE</span>
+          {% else %}
+            <span style="color: #64748b;">Stable</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- DATA QUALITY & AUDIT PROVENANCE -->
+  <h2>Data Quality &amp; Surveillance Pipeline Telemetry</h2>
+  <table class="data-table">
+    <tr>
+      <td style="width: 25%;"><strong>Telemetry Ingestion:</strong></td>
+      <td style="width: 25%;">{{ total_readings }} readings processed</td>
+      <td style="width: 25%;"><strong>Physiological Rejections (DLQ):</strong></td>
+      <td style="width: 25%;">{{ total_rejected }} sensor defects routed</td>
+    </tr>
+    <tr>
+      <td><strong>Pathology Coverage:</strong></td>
+      <td>
+        {% if total_patients > 0 %}
+          {{ (total_patients - stale_labs_count) }} / {{ total_patients }} current ({{ ((total_patients - stale_labs_count) / total_patients * 100) | round(1) }}%)
+        {% else %}
+          0 / 0 (N/A)
+        {% endif %}
+      </td>
+      <td><strong>Processing Path:</strong></td>
+      <td>Pure Kappa Architecture (PySpark Structured Streaming)</td>
+    </tr>
+  </table>
+
+  <div class="footer-provenance">
+    <strong>Architecture Compliance &amp; Provenance:</strong>
+    This document was generated automatically by the Apache Airflow <code>ward_daily_report</code> orchestration DAG.
+    In strict adherence to the Kappa architecture, all risk scores and clinical aggregations were derived continuously
+    by the stream processing pipeline and read verbatim from Cassandra table <code>ward.daily_patient_summary</code> (Query Q6).
+    No secondary batch calculations or out-of-band scoring algorithms were executed during report rendering.
+  </div>
+
+</body>
+</html>

@@ -25,6 +25,7 @@ api      = [
     "prometheus-fastapi-instrumentator>=7.0",
 ]
 spark    = ["pyspark==3.5.1"]
+report   = ["jinja2>=3.1", "weasyprint>=60.0"]
 dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",
