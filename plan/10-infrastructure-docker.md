@@ -117,7 +117,7 @@ Two files: `compose.yaml` (pipeline) and `compose.observability.yaml`, combined 
 | `pushgateway` | `prom/pushgateway:v1.9.0` | 9191 | 128 M |
 | `alertmanager` | `prom/alertmanager:v0.27.0` | **9193** | 128 M |
 | `grafana` | `grafana/grafana:11.1.0` | **3100** | 384 M |
-| `kafka-exporter` | `danielqsj/kafka-exporter:v1.7.0` | 9308 | 128 M |
+| `kafka-exporter` | `danielqsj/kafka-exporter:v1.7.0` | **9309** | 128 M |
 | `cassandra-jmx-exporter` | `bitnami/jmx-exporter` sidecar | 9404 | 192 M |
 | `statsd-exporter` | `prom/statsd-exporter:v0.27.0` | 9202 | 128 M |
 | `otel-collector` | `otel/opentelemetry-collector-contrib:0.104.0` | 4417, 4418 | 256 M |

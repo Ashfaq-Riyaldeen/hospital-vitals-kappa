@@ -165,6 +165,7 @@ def test_future_timestamp_is_two_simulated_hours_ahead() -> None:
 
 # ------------------------------------------------- the ward must start calm
 
+
 class TestTheWardIsCalmBeforeAnythingHappens:
     """★ Added after an end-to-end run showed the opposite.
 
@@ -226,9 +227,7 @@ class TestTheWardIsCalmBeforeAnythingHappens:
         """
         scores = self._day_one_scores()
         offenders = {
-            pid: round(sum(t) / len(t), 1)
-            for pid, t in scores.items()
-            if sum(t) / len(t) >= 7
+            pid: round(sum(t) / len(t), 1) for pid, t in scores.items() if sum(t) / len(t) >= 7
         }
         assert not offenders, f"patients averaging HIGH risk on day one: {offenders}"
 

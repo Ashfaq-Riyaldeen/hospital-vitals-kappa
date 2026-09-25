@@ -90,11 +90,20 @@ keys: ## Distinct patient keys on the vitals topic (must be exactly 40)
 	  --property print.key=true --property print.value=false --timeout-ms 20000 2>/dev/null \
 	  | sort -u | grep -c '^P' | xargs -I{} echo "  {} distinct patient keys (WARD_BEDS=40)"
 
+.PHONY: db-init
+db-init: ## Apply schema.cql to Cassandra idempotently
+	.venv/bin/python scripts/init_cassandra.py
+
+.PHONY: cqlsh
+cqlsh: ## Open cqlsh in the Cassandra container
+	@docker exec -it ward-cassandra cqlsh -k ward
+
 .PHONY: ports
 ports: ## What is listening where
 	@echo "  Kafka UI      http://localhost:8180"
 	@echo "  Schema Reg    http://localhost:8181/subjects"
 	@echo "  Kafka         localhost:9192"
+	@echo "  Cassandra     localhost:9142"
 	@echo "  monitors      http://localhost:8101/metrics"
 	@echo "  lab uploader  http://localhost:8102/metrics"
 	@echo ""
@@ -113,7 +122,7 @@ test: ## Unit and contract tests (no Docker needed)
 lint: ## ruff + format check + mypy on the strict modules
 	.venv/bin/ruff check ward tests scripts
 	.venv/bin/ruff format --check ward tests scripts
-	.venv/bin/mypy ward/clinical ward/simclock.py
+	.venv/bin/mypy ward/clinical ward/simclock.py ward/store/dao.py
 
 .PHONY: fmt
 fmt: ## Auto-format
