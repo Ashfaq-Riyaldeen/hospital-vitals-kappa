@@ -20,7 +20,6 @@ x-logging: &default-logging
   options: { max-size: "10m", max-file: "3" }
 
 services:
-
   # --- the backbone -------------------------------------------------------
   #
   # Under Kappa, Kafka is the SYSTEM OF RECORD, not a transport. Everything
@@ -34,7 +33,7 @@ services:
     container_name: ward-kafka
     hostname: kafka
     ports:
-      - "9192:9192"          # host access (localhost:9192)
+      - "9192:9192" # host access (localhost:9192)
     environment:
       # KRaft: no ZooKeeper. The module's material describes ZooKeeper as the
       # coordination layer "before version 2.8"; we run 3.x, so its absence from
@@ -69,7 +68,11 @@ services:
     volumes:
       - kafka-data:/var/lib/kafka/data
     healthcheck:
-      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9192 >/dev/null 2>&1"]
+      test:
+        [
+          "CMD-SHELL",
+          "kafka-broker-api-versions --bootstrap-server localhost:9192 >/dev/null 2>&1",
+        ]
       interval: 10s
       timeout: 10s
       retries: 12
@@ -97,7 +100,11 @@ services:
       SCHEMA_REGISTRY_SCHEMA_COMPATIBILITY_LEVEL: backward
       SCHEMA_REGISTRY_HEAP_OPTS: "-Xmx384m"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8181/subjects >/dev/null || exit 1"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -sf http://localhost:8181/subjects >/dev/null || exit 1",
+        ]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -122,7 +129,11 @@ services:
       KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8181
       DYNAMIC_CONFIG_ENABLED: "true"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://localhost:8080/actuator/health | grep -q UP",
+        ]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -188,7 +199,7 @@ services:
     depends_on:
       init: { condition: service_completed_successfully }
     ports:
-      - "8101:8101"          # /metrics and /health
+      - "8101:8101" # /metrics and /health
     env_file: [.env]
     environment:
       KAFKA_BOOTSTRAP: kafka:29092
@@ -256,6 +267,37 @@ services:
     mem_limit: 256m
     logging: *default-logging
 
+  # The Single Stream Processing Pipeline (PySpark Structured Streaming)
+  ward-stream:
+    build: { context: ., dockerfile: docker/spark-app/Dockerfile }
+    container_name: ward-stream
+    depends_on:
+      init: { condition: service_completed_successfully }
+      cassandra: { condition: service_healthy }
+    ports:
+      - "4140:4040" # Spark UI
+      - "8104:8104" # /metrics
+    env_file: [.env]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_SCHEMA_REGISTRY_URL: http://schema-registry:8181
+      CASSANDRA_CONTACT_POINTS: cassandra
+      CASSANDRA_PORT: 9042
+      CASSANDRA_KEYSPACE: ward
+      SIM_STATE_PATH: /state/sim_epoch.json
+      OBS_SERVICE_NAME: ward-stream
+      OBS_METRICS_PORT: 8104
+      SCORER_VERSION: v1
+      CONSUMER_GROUP: ward-stream-v1
+    volumes:
+      - ./state:/state:ro
+      - spark-checkpoints:/checkpoints
+    restart: unless-stopped
+    mem_limit: 1536m
+    logging: *default-logging
+
 volumes:
   kafka-data:
   cassandra-data:
+  spark-checkpoints:
+

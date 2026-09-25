@@ -57,3 +57,42 @@ def serialize_key(key: str, topic: str) -> bytes:
 
 def serialize_value(value: dict[str, Any], topic: str, url: str, schema_file: str) -> bytes:
     return avro_serializer(url, schema_file)(value, SerializationContext(topic, "value"))
+
+
+@lru_cache(maxsize=8)
+def avro_deserializer(url: str, schema_file: str | None = None) -> Any:
+    from confluent_kafka.schema_registry.avro import AvroDeserializer
+
+    schema_str = load_schema(schema_file) if schema_file else None
+    return AvroDeserializer(registry_client(url), schema_str)
+
+
+def deserialize(
+    value_bytes: bytes,
+    topic: str,
+    url: str | None = None,
+    schema_file: str | None = None,
+) -> dict[str, Any]:
+    """Deserialize Confluent-framed Avro bytes into a dictionary.
+
+    If url is given, uses confluent_kafka AvroDeserializer with schema registry.
+    If schema_file is provided, strips the 5-byte Confluent header and decodes
+    via fastavro locally without requiring network access to the registry.
+    """
+    if len(value_bytes) > 5 and value_bytes[0] == 0 and schema_file is not None:
+        import io
+
+        import fastavro
+
+        payload = value_bytes[5:]
+        reader_schema = json.loads(load_schema(schema_file))
+        return dict(fastavro.schemaless_reader(io.BytesIO(payload), reader_schema))
+
+    if url is not None:
+        from confluent_kafka.serialization import MessageField, SerializationContext
+
+        deser = avro_deserializer(url, schema_file)
+        result = deser(value_bytes, SerializationContext(topic, MessageField.VALUE))
+        return dict(result) if result is not None else {}
+
+    raise ValueError("Either url or schema_file must be specified for deserialization")
