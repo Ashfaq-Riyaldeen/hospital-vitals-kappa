@@ -1,140 +1,82 @@
 % D2 - Pure Kappa Layered Architecture. The report's centerpiece.
-%
-% Labelled in the coursework's vocabulary: Ingestion, Stream Processing, Storage,
-% Serving, Orchestration and Observability.
-% In pure Kappa, there is NO speed/batch layer split: ONE unified stream processing engine
-% evaluates NEWS2 and lab multipliers for both real-time triage and historical replay.
-% Every technology is named; the legend fixes the colour convention.
-\documentclass[border=6pt,varwidth=false]{standalone}
+\documentclass[border=6pt]{standalone}
 \input{kappastyle}
 \begin{document}
-\begin{tikzpicture}[x=10mm, y=10mm]
+\begin{tikzpicture}[node distance=5mm]
 
-% ===========================================================================
-% 1. SOURCES (Left column, x = 0)
-% ===========================================================================
-\node[ext, minimum width=34mm, minimum height=13mm] (vitals) at (0, 2.2)
-  {\textbf{Bedside Sensor Simulator}\\[1pt]\tiny 40 acute beds, 240 ev/min, Avro\\\tiny HR, SpO2, BP, RR, Temp, Alert spikes};
-\node[lbl, above=1pt of vitals.north] {STREAMING SOURCE};
+% Sources
+\node[ext] (vitals) {Bedside Monitors Simulator\\[1pt]\tiny 40 beds, 240 ev/min, Avro};
+\node[ext, below=8mm of vitals] (labs) {Pathology Lab Dropper\\[1pt]\tiny 1 JSON per simulated day};
 
-\node[ext, minimum width=34mm, minimum height=13mm] (labs) at (0, -2.2)
-  {\textbf{Pathology Lab Dropper}\\[1pt]\tiny 1 JSON per simulated day\\\tiny lactate, troponin, creatinine, platelets};
-\node[lbl, below=1pt of labs.south] {DAILY-BATCH SOURCE};
+\node[lbl, above=1mm of vitals] {STREAMING SOURCE};
+\node[lbl, below=1mm of labs] {DAILY-BATCH SOURCE};
 
-% ===========================================================================
-% 2. INGESTION LAYER (x = 4.6)
-% ===========================================================================
-\node[infra, minimum width=38mm, minimum height=26mm] (kafka) at (4.6, 2.2)
-  {\textbf{Apache Kafka (KRaft)}\\[2pt]\tiny Broker port: 9192\\\tiny Topic: \texttt{vitals.raw} (6 partitions)\\\tiny Key = \texttt{patient\_id} (ordered delivery)\\\tiny Schema Registry (Avro envelopes)\\\tiny Dead-Letter Topic: \texttt{dlq.vitals}};
+% Ingestion
+\node[infra, right=12mm of vitals, minimum height=14mm] (kafka)
+  {\textbf{Apache Kafka (KRaft)}\\[1pt]\tiny 6 partitions, key=patient\_id\\\tiny topics: vitals.raw, labs.raw\\\tiny Schema Registry (Avro)};
 
-\node[infra, minimum width=38mm, minimum height=16mm] (obs) at (4.6, -2.2)
-  {\textbf{Observability Stack}\\[1pt]\tiny Prometheus (9190) + Grafana (3100)\\\tiny Alertmanager (9193): domain routing\\\tiny Rule: \texttt{WardMonitoringSilent}\\\tiny Absence of alerts $\ne$ absence of risk};
+% Single Stream Processing Engine
+\node[stream, right=14mm of kafka, yshift=7mm, minimum width=40mm] (spark)
+  {\textbf{PySpark Structured Streaming}\\[1pt]\tiny Pure Clinical Risk Engine\\\tiny NEWS2 (Scale 1/2) + Lab Multipliers\\\tiny 5m/15m/1h sliding event windows};
 
-% ===========================================================================
-% 3. STREAM PROCESSING ENGINE (x = 9.8)
-% ===========================================================================
-\node[stream, minimum width=44mm, minimum height=32mm] (spark) at (9.8, 2.2)
-  {\textbf{PySpark Structured Streaming}\\[2pt]\tiny\textbf{Unified Clinical Risk Engine}\\\tiny $\bullet$ AST-enforced single scorer invariant\\\tiny $\bullet$ NEWS2 (Scale 1 \& Scale 2 for COPD)\\\tiny $\bullet$ Dynamic Lab Multipliers ($M_{\text{lac}}, M_{\text{trop}}$)\\\tiny $\bullet$ Composite Risk: $\text{NEWS2} \times \prod M_i$\\\tiny $\bullet$ Event-time windows: 5m, 15m, 1h\\\tiny $\bullet$ 10\,s micro-batch trigger};
+% Storage Layer
+\node[store, right=14mm of spark, minimum width=36mm] (cass)
+  {\textbf{Apache Cassandra}\\[1pt]\tiny 7 Query-First Tables (Q1--Q7)\\\tiny Q2 Snapshot: clustered by risk DESC\\\tiny Q4 Alerts, Q6 Labs, Q5 Aggregates};
 
-\node[infra, minimum width=44mm, minimum height=16mm] (airflow) at (9.8, -2.2)
-  {\textbf{Apache Airflow (Port 8180)}\\[1pt]\tiny Production DAGs: \texttt{ward\_lab\_ingest},\\\tiny \texttt{ward\_daily\_report}, \texttt{ward\_replay}\\\tiny Daily file sensor \& automated replay};
+% Serving Layer
+\node[serv, below=10mm of cass, minimum width=36mm] (api)
+  {\textbf{FastAPI Serving Layer}\\[1pt]\tiny Port 8100, async readers\\\tiny /monitor, /sparklines, /alerts\\\tiny /cutover, /compare};
 
-% ===========================================================================
-% 4. STORAGE LAYER (x = 15.6)
-% ===========================================================================
-\node[store, minimum width=48mm, minimum height=48mm] (cass) at (15.6, 1.4) {};
-\node[font=\scriptsize\bfseries, text=storegreen, anchor=north] at (cass.north)
-  {Apache Cassandra (Port 9142)};
-\node[font=\tiny\itshape, text=edgegrey, below=3.2mm of cass.north] (cql_title)
-  {Query-First Keyspace: \texttt{ward}};
+% Orchestration
+\node[infra, below=10mm of spark, minimum width=40mm] (airflow)
+  {\textbf{Apache Airflow}\\[1pt]\tiny Port 8180: ward\_lab\_ingest\\\tiny ward\_daily\_report, ward\_replay};
 
-\node[cqlbox, below=1mm of cql_title, minimum width=44mm] (q1)
-  {\textbf{Q1} \texttt{vitals\_by\_patient} \textemdash\ raw time-series};
-\node[cqlbox, below=1mm of q1, minimum width=44mm] (q2)
-  {\textbf{Q2} \texttt{ward\_risk\_snapshot} \textemdash\ worst-first, 120s TTL};
-\node[cqlbox, below=1mm of q2, minimum width=44mm] (q3)
-  {\textbf{Q3} \texttt{risk\_scores\_by\_patient} \textemdash\ longitudinal timeline};
-\node[cqlbox, below=1mm of q3, minimum width=44mm] (q4)
-  {\textbf{Q4} \texttt{alerts\_by\_ward} \textemdash\ acute deterioration events};
-\node[cqlbox, below=1mm of q4, minimum width=44mm] (q5)
-  {\textbf{Q5} \texttt{labs\_by\_patient} \textemdash\ daily panels \& multipliers};
-\node[cqlbox, below=1mm of q5, minimum width=44mm] (q6)
-  {\textbf{Q6} \texttt{daily\_patient\_summary} \textemdash\ daily aggregates};
-\node[cqlbox, below=1mm of q6, minimum width=44mm] (q7)
-  {\textbf{Q7} \texttt{sim\_state} \textemdash\ active cutover version pointer};
+% Observability
+\node[infra, below=8mm of kafka, minimum width=30mm] (obs)
+  {\textbf{Observability Stack}\\[1pt]\tiny Prometheus (9190) + Grafana (3100)\\\tiny Alertmanager: WardMonitoringSilent};
 
-\node[infra, minimum width=48mm, minimum height=16mm] (replay) at (15.6, -2.2)
-  {\textbf{Kappa Replay \& Audit Engine}\\[1pt]\tiny Module: \texttt{ward.replay.compare\_versions}\\\tiny COPD: $-180$ false alarms suppressed\\\tiny Control: 0.00\% delta (bit-identical)};
+% Outputs / Consumers
+\node[ext, right=12mm of api] (clients)
+  {\textbf{Clinical Consumer Views}\\[1pt]\tiny Grafana 40-Bed Ward Monitor\\\tiny Daily Consolidated PDF Reports};
 
-% ===========================================================================
-% 5. SERVING & REPORTING LAYER (x = 21.4)
-% ===========================================================================
-\node[serv, minimum width=38mm, minimum height=26mm] (api) at (21.4, 2.2)
-  {\textbf{FastAPI Serving Layer}\\[2pt]\tiny Port 8100, async prepared statements\\\tiny \texttt{/monitor} \textemdash\ worst-first 40-bed slice\\\tiny \texttt{/sparklines} \textemdash\ windowed trends\\\tiny \texttt{/alerts} \textemdash\ active ward alarms\\\tiny \texttt{POST /cutover} \textemdash\ 0\,ms pointer switch};
+% Edges
+\draw[streamflow] (vitals) -- (kafka);
+\draw[flow]       (labs.east) -| (airflow.south west);
+\draw[flow]       (airflow.west) -| (kafka.south);
+\node[lbl, below=1mm of airflow.south west, anchor=north west] {drops labs into Kafka or Cassandra};
 
-\node[serv, minimum width=38mm, minimum height=16mm] (report_renderer) at (21.4, -2.2)
-  {\textbf{Clinical PDF Renderer}\\[1pt]\tiny WeasyPrint + Jinja2\\\tiny Joins Q2 snapshot + Q6 daily labs\\\tiny 1 consolidated PDF per simulated day};
-
-% ===========================================================================
-% 6. CONSUMERS & VIEWS (x = 26.2)
-% ===========================================================================
-\node[ext, minimum width=32mm, minimum height=18mm] (dash) at (26.2, 2.2)
-  {\textbf{Grafana 40-Bed}\\\textbf{Ward Monitor}\\[1pt]\tiny Live bedside triage\\\tiny auto-refresh 3\,s};
-
-\node[ext, minimum width=32mm, minimum height=16mm] (pdf_out) at (26.2, -2.2)
-  {\textbf{Daily Clinical}\\\textbf{PDF Report}\\[1pt]\tiny Clinical governance\\\tiny \& medical records};
-
-% ===========================================================================
-% EDGES & CONNECTIONS
-% ===========================================================================
-% Streaming path
-\draw[streamflow] (vitals.east) -- (kafka.west);
 \draw[streamflow] (kafka.east) -- (spark.west);
-\draw[streamflow] (spark.east) -- (cass.west |- spark.east);
-\draw[streamflow] (cass.east |- api.west) -- (api.west);
-\draw[streamflow] (api.east) -- (dash.west);
+\draw[streamflow] (spark.east) -- (cass.west);
+\draw[flow]       (cass.south) -- (api.north);
+\draw[flow]       (api.east) -- (clients.west);
+\draw[flow, dashed] (airflow.east) -- (cass.south west);
+\node[lbl, above=1mm of airflow.east, anchor=south west] {daily report queries Q2, Q3, Q6};
 
-% Daily batch labs path
-\draw[flow] (labs.east) -- node[lbl, above] {daily JSON} (airflow.west);
-\draw[flow, dashed] (airflow.north) -- node[lbl, right] {publishes labs} (kafka.south -| airflow.north);
-\draw[flow] (airflow.east) -- node[lbl, above] {commits labs Q5/Q6} (replay.west);
-\draw[flow] (replay.north) -- (cass.south);
+\draw[flow, dashed] (spark.south) -- (obs.east);
+\draw[flow, dashed] (api.south) -- ++(0,-4mm) -| (obs.south);
 
-% Reporting path
-\draw[flow] (airflow.south) -- ++(0,-0.6) -| node[lbl, pos=0.25, above] {triggers daily run} (report_renderer.south);
-\draw[flow] (cass.south -| report_renderer.north) -- (report_renderer.north);
-\draw[flow] (report_renderer.east) -- (pdf_out.west);
-
-% Observability telemetry
-\draw[flow, dashed] (spark.south) -- (obs.north -| spark.south);
-\draw[flow, dashed] (api.south) -- ++(0,-0.3) -| (obs.east);
-
-% ===========================================================================
-% BACKGROUND ZONES & TITLES
-% ===========================================================================
+% Background zone grouping
 \begin{scope}[on background layer]
   \node[zone, fit=(spark), draw=streamblue] (zstream) {};
   \node[zone, fit=(cass), draw=storegreen] (zstore) {};
-  \node[zone, fit=(api)(report_renderer), draw=servorange] (zserv) {};
+  \node[zone, fit=(api), draw=servorange] (zserv) {};
 \end{scope}
 
 \node[ztitle, text=streamblue, above=0.5mm of zstream.north west, anchor=west]
-  {UNIFIED STREAM PROCESSING (Single Scorer Invariant)};
+  {UNIFIED STREAM ENGINE (Single Scorer)};
 \node[ztitle, text=storegreen, above=0.5mm of zstore.north west, anchor=west]
-  {STORAGE LAYER (7 Query-First CQL Tables)};
-\node[ztitle, text=servorange, above=0.5mm of zserv.north west, anchor=west]
-  {SERVING \& REPORTING LAYER};
+  {STORAGE LAYER (Query-First CQL)};
+\node[ztitle, text=servorange, below=0.5mm of zserv.south west, anchor=west]
+  {SERVING LAYER};
 
-% ===========================================================================
-% LEGEND
-% ===========================================================================
-\node[font=\tiny, align=left, below=12mm of labs.south west, anchor=north west, text=edgegrey]
+% Legend
+\node[font=\tiny, align=left, below=8mm of obs.south west, anchor=north west, text=edgegrey]
   {\textbf{Legend}\quad
    \textcolor{streamblue}{\rule{2.5mm}{2.5mm}}~streaming path \quad
    \textcolor{storegreen}{\rule{2.5mm}{2.5mm}}~storage layer \quad
    \textcolor{servorange}{\rule{2.5mm}{2.5mm}}~serving layer \quad
    \textcolor{infragrey}{\rule{2.5mm}{2.5mm}}~infrastructure \quad
-   dashed~=~control / metrics flow};
+   dashed~=~control / metric telemetry};
 
 \end{tikzpicture}
 \end{document}
