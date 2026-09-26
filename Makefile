@@ -104,14 +104,22 @@ ports: ## What is listening where
 	@echo "  Schema Reg    http://localhost:8181/subjects"
 	@echo "  Kafka         localhost:9192"
 	@echo "  Cassandra     localhost:9142"
-	@echo "  monitors      http://localhost:8101/metrics"
-	@echo "  lab uploader  http://localhost:8102/metrics"
+	@echo "  FastAPI Docs  http://localhost:8100/docs"
+	@echo "  Airflow UI    http://localhost:8182"
 	@echo "  Prometheus    http://localhost:9190"
 	@echo "  Alertmanager  http://localhost:9193"
+	@echo "  Grafana       http://localhost:3100"
+	@echo "  monitors      http://localhost:8101/metrics"
+	@echo "  lab uploader  http://localhost:8102/metrics"
 	@echo ""
-	@echo "  NOTE: 91xx/81xx deliberately avoid the sibling ride-hailing stack's"
-	@echo "        90xx/80xx. The two cannot run at the same time regardless -"
+	@echo "  NOTE: 91xx/81xx/31xx avoid the sibling ride-hailing stack's"
+	@echo "        90xx/80xx/30xx. The two cannot run at the same time regardless -"
 	@echo "        each peaks near 10 GB of the ~11 GB Docker gets."
+
+.PHONY: grafana
+grafana: ## Open Grafana dashboards in browser (http://localhost:3100)
+	@echo "Opening Grafana at http://localhost:3100 ..."
+	@python3 -m webbrowser "http://localhost:3100" 2>/dev/null || echo "Navigate to http://localhost:3100"
 
 # ---------------------------------------------------------------------------
 ##@ Replay & Reprocessing (Kappa)
