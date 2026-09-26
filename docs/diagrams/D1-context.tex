@@ -1,37 +1,41 @@
 % D1 - System context. Who the hospital platform serves, and what crosses its boundary.
+%
+% Deliberately the only diagram with no technology names: the purpose of a context
+% diagram is that clinical and governance stakeholders who know nothing of Kafka or Spark
+% can immediately understand what the platform solves and who depends on it.
 \documentclass[border=8pt]{standalone}
 \input{kappastyle}
 \begin{document}
 \begin{tikzpicture}[node distance=9mm]
 
-\node[box, draw=streamblue, fill=streambg, minimum width=48mm, minimum height=22mm,
+\node[box, draw=streamblue, fill=streambg, minimum width=52mm, minimum height=22mm,
       font=\small\bfseries] (sys)
   {Hospital Patient Vital Signs\\Monitoring Platform};
 \node[font=\tiny\itshape, text=edgegrey, below=0.5mm of sys.north, anchor=north]
   {Pure Kappa Architecture};
 
-% Actors in
-\node[ext, left=28mm of sys, yshift=15mm, minimum width=32mm] (monitors)
-  {\textbf{Bedside Sensors}\\[1pt]\tiny 40 beds emitting HR, SpO2,\\\tiny BP, RR, Temp every 3.1\,s ($\approx$13 ev/s)};
-\node[ext, left=28mm of sys, yshift=-15mm, minimum width=32mm] (pathlab)
-  {\textbf{Pathology Lab}\\[1pt]\tiny Daily lab result uploads:\\\tiny lactate, troponin, creatinine};
+%  Actors In (Sources)
+\node[ext, left=30mm of sys, yshift=16mm, minimum width=34mm] (monitors)
+  {\textbf{Bedside Sensors}\\[1pt]\tiny 40 acute beds emitting HR, SpO2,\\\tiny BP, RR, Temp every 3\,s (Avro)};
+\node[ext, left=30mm of sys, yshift=-16mm, minimum width=34mm] (pathlab)
+  {\textbf{Pathology Laboratory}\\[1pt]\tiny One diagnostic file per day:\\\tiny lactate, troponin, creatinine};
 
-% Actors out
-\node[ext, right=28mm of sys, yshift=15mm, minimum width=32mm] (clinicians)
-  {\textbf{Ward Clinicians \& RRT}\\[1pt]\tiny Needs it NOW ($<$30\,s):\\\tiny worst-first monitor, alerts};
-\node[ext, right=28mm of sys, yshift=-15mm, minimum width=32mm] (audit)
-  {\textbf{Clinical Governance}\\[1pt]\tiny Needs it RIGHT \& HISTORICAL:\\\tiny longitudinal trends, daily PDF};
+%  Actors Out (Consumers)
+\node[ext, right=30mm of sys, yshift=16mm, minimum width=34mm] (clinicians)
+  {\textbf{Ward Clinicians \& RRT}\\[1pt]\tiny Needs it NOW ($<$30\,s):\\\tiny worst-first triage, urgent alerts};
+\node[ext, right=30mm of sys, yshift=-16mm, minimum width=34mm] (audit)
+  {\textbf{Clinical Governance}\\[1pt]\tiny Needs it RIGHT \& 30-DAY:\\\tiny longitudinal trends, daily PDF};
 
-% Edges
-\draw[streamflow] (monitors.east)  -- node[lbl, above, sloped] {vital telemetry, continuous} (sys.north west);
-\draw[flow]       (pathlab.east)   -- node[lbl, below, sloped] {lab results, once a day} (sys.south west);
-\draw[alertflow]  (sys.north east) -- node[lbl, above, sloped] {worst-first monitor, alerts} (clinicians.west);
-\draw[flow]       (sys.south east) -- node[lbl, below, sloped] {daily PDF report, audit replay} (audit.west);
+%  Boundary Flows
+\draw[streamflow] (monitors.east)  -- node[lbl, above, sloped] {vital telemetry, continuous (3\,s)} (sys.north west);
+\draw[flow]       (pathlab.east)   -- node[lbl, below, sloped] {pathology extract, once a day} (sys.south west);
+\draw[alertflow]  (sys.north east) -- node[lbl, above, sloped] {worst-first triage, alerts} (clinicians.west);
+\draw[flow]       (sys.south east) -- node[lbl, below, sloped] {daily clinical PDF, audit replay} (audit.west);
 
-% The clinical tension note
-\node[font=\tiny\itshape, text=edgegrey, align=center, below=12mm of sys]
-  {Acute bedside triage demands sub-minute latency; clinical risk governance demands historical depth and zero scoring drift.\\
-   A pure Kappa architecture unifies both over an immutable log, eliminating the dual-codebase hazards of Lambda.};
+%  The Clinical Tension
+\node[font=\tiny\itshape, text=edgegrey, align=center, below=13mm of sys]
+  {Acute bedside triage demands sub-minute reaction latency; clinical governance demands 30-day historical auditability and zero scoring drift.\\
+   A pure Kappa architecture unifies both horizons over a single immutable log, eliminating the dual-codebase hazards of Lambda.};
 
 \end{tikzpicture}
 \end{document}
