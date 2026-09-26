@@ -1,0 +1,37 @@
+% D1 - System context. Who the hospital platform serves, and what crosses its boundary.
+\documentclass[border=8pt]{standalone}
+\input{kappastyle}
+\begin{document}
+\begin{tikzpicture}[node distance=9mm]
+
+\node[box, draw=streamblue, fill=streambg, minimum width=48mm, minimum height=22mm,
+      font=\small\bfseries] (sys)
+  {Hospital Patient Vital Signs\\Monitoring Platform};
+\node[font=\tiny\itshape, text=edgegrey, below=0.5mm of sys.north, anchor=north]
+  {Pure Kappa Architecture};
+
+% Actors in
+\node[ext, left=28mm of sys, yshift=15mm, minimum width=32mm] (monitors)
+  {\textbf{Bedside Sensors}\\[1pt]\tiny 40 beds emitting HR, SpO2,\\\tiny BP, RR, Temp every 3\,s};
+\node[ext, left=28mm of sys, yshift=-15mm, minimum width=32mm] (pathlab)
+  {\textbf{Pathology Lab}\\[1pt]\tiny Daily lab result uploads:\\\tiny lactate, troponin, creatinine};
+
+% Actors out
+\node[ext, right=28mm of sys, yshift=15mm, minimum width=32mm] (clinicians)
+  {\textbf{Ward Clinicians \& RRT}\\[1pt]\tiny Needs it NOW ($<$30\,s):\\\tiny worst-first monitor, alerts};
+\node[ext, right=28mm of sys, yshift=-15mm, minimum width=32mm] (audit)
+  {\textbf{Clinical Governance}\\[1pt]\tiny Needs it RIGHT \& HISTORICAL:\\\tiny longitudinal trends, daily PDF};
+
+% Edges
+\draw[streamflow] (monitors.east)  -- node[lbl, above, sloped] {vital telemetry, continuous} (sys.north west);
+\draw[flow]       (pathlab.east)   -- node[lbl, below, sloped] {lab results, once a day} (sys.south west);
+\draw[alertflow]  (sys.north east) -- node[lbl, above, sloped] {worst-first monitor, alerts} (clinicians.west);
+\draw[flow]       (sys.south east) -- node[lbl, below, sloped] {daily PDF report, audit replay} (audit.west);
+
+% The clinical tension note
+\node[font=\tiny\itshape, text=edgegrey, align=center, below=12mm of sys]
+  {Acute bedside triage demands sub-minute latency; clinical risk governance demands historical depth and zero scoring drift.\\
+   A pure Kappa architecture unifies both over an immutable log, eliminating the dual-codebase hazards of Lambda.};
+
+\end{tikzpicture}
+\end{document}

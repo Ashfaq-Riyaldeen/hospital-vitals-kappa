@@ -12,5 +12,9 @@ logs/
 labs/inbox/
 reports/*.pdf
 reports/*.html
-labs/inbox/
 labs/inbox/.tmp/
+*.aux
+*.log
+*.fls
+*.fdb_latexmk
+*.synctex.gz
