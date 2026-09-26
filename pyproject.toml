@@ -61,6 +61,7 @@ ignore = [
 # Tests assert on magic numbers on purpose: the NEWS2 reference table IS the
 # expected value, and naming each threshold would hide what is being checked.
 "tests/**" = ["E501"]
+"scripts/**" = ["E501"]
 
 # ---------------------------------------------------------------------------
 # mypy is strict only where correctness is load-bearing and the types are good.
