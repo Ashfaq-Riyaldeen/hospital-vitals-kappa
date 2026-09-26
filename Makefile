@@ -169,6 +169,29 @@ e2e: ## ★ End-to-end: consume real readings and score them with the real score
 	.venv/bin/python scripts/verify_end_to_end.py
 
 # ---------------------------------------------------------------------------
+##@ Report and Artifacts
+
+.PHONY: diagrams
+diagrams: ## Compile TikZ vector architecture diagrams (D1-D4)
+	$(MAKE) -C docs/diagrams
+
+.PHONY: figures
+figures: ## Synthesize or capture report evidence figures (R1-R9b)
+	.venv/bin/python scripts/capture_figures.py
+
+.PHONY: report
+report: diagrams figures ## Build the complete academic coursework report PDF
+	$(MAKE) -C docs/report
+
+.PHONY: report-check
+report-check: ## Check that the coursework report contains no unresolved placeholders
+	$(MAKE) -C docs/report check
+
+.PHONY: report-clean
+report-clean: ## Clean LaTeX build intermediate files
+	$(MAKE) -C docs/report clean
+
+# ---------------------------------------------------------------------------
 ##@ Help
 
 .PHONY: help
