@@ -5,7 +5,7 @@
 \begin{tikzpicture}[node distance=5mm]
 
 % Sources
-\node[ext] (vitals) {Bedside Monitors Simulator\\[1pt]\tiny 40 beds, 240 ev/min, Avro};
+\node[ext] (vitals) {Bedside Monitors Simulator\\[1pt]\tiny 40 beds, $\approx$800 ev/min ($\approx$13 ev/s), Avro};
 \node[ext, below=8mm of vitals] (labs) {Pathology Lab Dropper\\[1pt]\tiny 1 JSON per simulated day};
 
 \node[lbl, above=1mm of vitals] {STREAMING SOURCE};
@@ -13,7 +13,7 @@
 
 % Ingestion
 \node[infra, right=12mm of vitals, minimum height=14mm] (kafka)
-  {\textbf{Apache Kafka (KRaft)}\\[1pt]\tiny 6 partitions, key=patient\_id\\\tiny topics: vitals.raw, labs.raw\\\tiny Schema Registry (Avro)};
+  {\textbf{Apache Kafka (KRaft)}\\[1pt]\tiny 6 partitions, key=patient\_id\\\tiny topics: vitals.readings.v1, labs.results.v1\\\tiny Schema Registry (Avro)};
 
 % Single Stream Processing Engine
 \node[stream, right=14mm of kafka, yshift=7mm, minimum width=40mm] (spark)
@@ -21,7 +21,7 @@
 
 % Storage Layer
 \node[store, right=14mm of spark, minimum width=36mm] (cass)
-  {\textbf{Apache Cassandra}\\[1pt]\tiny 7 Query-First Tables (Q1--Q7)\\\tiny Q2 Snapshot: clustered by risk DESC\\\tiny Q4 Alerts, Q6 Labs, Q5 Aggregates};
+  {\textbf{Apache Cassandra}\\[1pt]\tiny Keyspace: ward (Q1--Q7)\\\tiny Q2: ward\_risk\_snapshot (risk DESC)\\\tiny Q4: alerts\_by\_ward, Q6: daily\_summary};
 
 % Serving Layer
 \node[serv, below=10mm of cass, minimum width=36mm] (api)

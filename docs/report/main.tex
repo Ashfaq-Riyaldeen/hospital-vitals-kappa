@@ -181,7 +181,7 @@ When the Royal College of Physicians issued NEWS2 in December 2017, they introdu
 
 Under pure Kappa, migrating the hospital from Scale 1 to Scale 2 is executed cleanly:
 \begin{enumerate}
-    \item The raw vital sign telemetry stored in Apache Kafka (\texttt{vitals.raw}) is immutable and retained for 30 days.
+    \item The raw vital sign telemetry stored in Apache Kafka (\texttt{vitals.readings.v1}) is immutable and retained for 30 days.
     \item A new consumer group (\texttt{ward-stream-v2-replay}) is spawned with its offset reset to \texttt{earliest} (offset 0).
     \item The streaming pipeline reprocesses all 30 days of raw history using the updated Scale 2 logic, writing into a parallel keyspace (\texttt{hospital\_vitals\_v2}).
     \item An automated clinical audit comparator (\texttt{compare\_versions.py}) verifies that COPD patients experience a dramatic drop in false alarms, while non-COPD control patients exhibit exactly 0.00\% score delta.
@@ -232,9 +232,9 @@ The ingestion layer simulates a 40-bed acute medical ward operating with realist
         \item \emph{Patient P014 (Bed 14):} Progresses into septic shock, exhibiting severe tachycardia (heart rate $>$125 bpm), profound hypotension (systolic BP dropping from 120 to 88 mmHg), and tachypnea.
         \item \emph{Patient P031 (Bed 31):} Patient with chronic hypercapnic respiratory failure (COPD) admitted with acute exacerbation, maintaining baseline SpO2 between 84\% and 89\%.
     \end{itemize}
-    \item \textbf{Kafka Partitioning Strategy:} All vital telemetry events are published to Kafka topic \texttt{vitals.raw} partitioned with key \texttt{patient\_id}. By using strict patient key partitioning across 6 partitions, in-order delivery is guaranteed per patient without distributed race conditions.
-    \item \textbf{Schema Governance:} Payloads are serialized using Apache Avro with schemas registered in Confluent Schema Registry. A strict Dead-Letter Queue (\texttt{dlq.vitals}) catches any schema violation or malformed byte stream.
-    \item \textbf{Pathology Lab Dropper:} Simulates the laboratory information system (LIS), generating a daily JSON file containing serum lactate, high-sensitivity cardiac troponin, serum creatinine, and platelet counts.
+    \item \textbf{Kafka Partitioning Strategy:} All vital telemetry events are published to Kafka topic \texttt{vitals.readings.v1} partitioned with key \texttt{patient\_id}. By using strict patient key partitioning across 6 partitions, in-order delivery is guaranteed per patient without distributed race conditions.
+    \item \textbf{Schema Governance:} Payloads are serialized using Apache Avro with schemas registered in Confluent Schema Registry. A strict Dead-Letter Queue (\texttt{vitals.dlq.v1}) catches any schema violation or malformed byte stream.
+    \item \textbf{Pathology Lab Dropper:} Simulates the laboratory information system (LIS), generating a daily JSON file containing serum lactate, high-sensitivity cardiac troponin, serum creatinine, and platelet counts, published to \texttt{labs.results.v1}.
 \end{itemize}
 
 \subsection{Single Stream Processing Pipeline and Risk Engine}
@@ -303,16 +303,16 @@ In Cassandra, schemas cannot be designed generically; they must be modeled \text
 \toprule
 \textbf{Table} & \textbf{Primary Key Structure} & \textbf{Clustering Order} & \textbf{Clinical Query Served} \\
 \midrule
-\texttt{Q1: patient\_vital\_readings} & \texttt{((patient\_id), recorded\_at)} & \texttt{recorded\_at DESC} & Raw time-series retrieval for bedside audit. \\
-\texttt{Q2: ward\_risk\_snapshot} & \texttt{((ward\_id), max\_risk, pid)} & \texttt{max\_risk DESC} & Real-time 40-bed monitor, sorted worst-first. \\
-\texttt{Q3: patient\_risk\_timeline} & \texttt{((patient\_id), bucket, ts)} & \texttt{ts DESC} & 24-hour longitudinal risk progression. \\
-\texttt{Q4: patient\_deterioration\_events} & \texttt{((ward\_id), event\_time, pid)} & \texttt{event\_time DESC} & Urgent clinical alarm log for RRT paging. \\
-\texttt{Q5: patient\_window\_aggregates} & \texttt{((patient\_id), win\_type, end)} & \texttt{end DESC} & Multi-scale sparkline visual trends. \\
-\texttt{Q6: patient\_lab\_results} & \texttt{((patient\_id), collected\_at)} & \texttt{collected\_at DESC} & Latest pathology blood panel and multipliers. \\
-\texttt{Q7: pipeline\_watermarks} & \texttt{((pipeline\_id))} & None & Stream processing watermark progress. \\
+\texttt{Q1: vitals\_by\_patient} & \texttt{((patient\_id), measured\_at, reading\_id)} & \texttt{measured\_at DESC} & Raw time-series retrieval for bedside audit. \\
+\texttt{Q2: ward\_risk\_snapshot} & \texttt{((ward\_id, scorer\_version), risk\_score, pid)} & \texttt{risk\_score DESC} & Real-time 40-bed monitor, sorted worst-first (TTL 120s). \\
+\texttt{Q3: risk\_scores\_by\_patient} & \texttt{((patient\_id), scorer\_version, scored\_at)} & \texttt{scored\_at DESC} & Longitudinal risk progression per scorer version. \\
+\texttt{Q4: alerts\_by\_ward} & \texttt{((ward\_id, sim\_date), alert\_time, alert\_id)} & \texttt{alert\_time DESC} & Urgent clinical alarm log for RRT paging. \\
+\texttt{Q5: labs\_by\_patient} & \texttt{((patient\_id), test\_type, collected\_at)} & \texttt{collected\_at DESC} & Latest pathology blood panel and reference ranges. \\
+\texttt{Q6: daily\_patient\_summary} & \texttt{((ward\_id, sim\_date), patient\_id, scorer\_version)} & None & Pre-computed daily summary for PDF reports. \\
+\texttt{Q7: sim\_state} & \texttt{((key))} & None & Cluster metadata and active cutover version pointer. \\
 \bottomrule
 \end{tabularx}
-\caption{Cassandra query-first schema design across 7 tables.}
+\caption{Cassandra query-first schema design across 7 tables in keyspace \texttt{ward}.}
 \label{tab:cassandra_schemas}
 \end{table}
 
@@ -322,11 +322,11 @@ Table Q2 (\texttt{ward\_risk\_snapshot}) represents the technical highlight of t
 
 In Cassandra, table Q2 defines:
 \begin{equation}
-    \text{PRIMARY KEY } ((ward\_id), max\_composite\_risk, patient\_id) \quad \text{WITH CLUSTERING ORDER BY } (max\_composite\_risk \text{ DESC})
+    \text{PRIMARY KEY } ((ward\_id, scorer\_version), risk\_score, patient\_id) \quad \text{WITH CLUSTERING ORDER BY } (risk\_score \text{ DESC}, patient\_id \text{ ASC})
 \end{equation}
 Because Cassandra physically stores rows sorted by their clustering columns on disk within each partition, querying the 40-bed ward monitor is an $O(1)$ sequential slice:
 \begin{verbatim}
-SELECT * FROM ward_risk_snapshot WHERE ward_id = 'WARD-A' LIMIT 40;
+SELECT * FROM ward.ward_risk_snapshot WHERE ward_id = 'WARD-A' AND scorer_version = 'v1' LIMIT 40;
 \end{verbatim}
 The rows are returned already sorted from the sickest patient to the healthiest patient with \textbf{zero CPU sorting overhead} in the application layer. Furthermore, rows in table Q2 are written with a \textbf{120-second Time-To-Live (TTL)}, ensuring that if a bedside sensor stops publishing, its stale record automatically evaporates from the live screen.
 

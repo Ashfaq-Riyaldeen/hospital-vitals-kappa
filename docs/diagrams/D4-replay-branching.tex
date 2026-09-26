@@ -6,21 +6,21 @@
 
 % Kafka log
 \node[infra, minimum width=90mm, minimum height=14mm] (log)
-  {\textbf{Apache Kafka Master Log (vitals.raw)}\\[2pt]\scriptsize 30-Day Immutable Retention: Offsets $0 \longrightarrow N$};
+  {\textbf{Apache Kafka Master Log (vitals.readings.v1)}\\[2pt]\scriptsize 30-Day Immutable Retention: Offsets $0 \longrightarrow N$};
 
 % Active pipeline v1
 \node[stream, below left=14mm and -15mm of log.south, minimum width=36mm] (v1)
   {\textbf{Pipeline v1 (Active)}\\[1pt]\tiny Consumer: ward-stream-v1\\\tiny Logic: NEWS2 Scale 1\\\tiny Reads at log head};
 
 \node[store, below=8mm of v1, minimum width=36mm] (c1)
-  {\textbf{Cassandra (v1)}\\[1pt]\tiny Keyspace: hospital\_vitals\\\tiny Active serving tables};
+  {\textbf{Cassandra (v1)}\\[1pt]\tiny Keyspace: ward (v1 partitions)\\\tiny Active serving tables};
 
 % Replay pipeline v2
 \node[stream, below right=14mm and -15mm of log.south, minimum width=36mm, draw=servorange] (v2)
   {\textbf{Pipeline v2 (Replay)}\\[1pt]\tiny Consumer: ward-stream-v2-replay\\\tiny Logic: NEWS2 Scale 2 (COPD)\\\tiny Reads from offset 0};
 
 \node[store, below=8mm of v2, minimum width=36mm, draw=servorange] (c2)
-  {\textbf{Cassandra (v2)}\\[1pt]\tiny Keyspace: hospital\_vitals\_v2\\\tiny Parallel reprocessed tables};
+  {\textbf{Cassandra (v2)}\\[1pt]\tiny Keyspace: ward (v2 partitions)\\\tiny Parallel reprocessed tables};
 
 % Comparator / Audit
 \node[box, draw=edgegrey, fill=white, below=10mm of log, yshift=-25mm, minimum width=30mm] (diff)
@@ -28,7 +28,7 @@
 
 % Serving layer cutover
 \node[serv, below=10mm of diff, minimum width=45mm] (api)
-  {\textbf{FastAPI Serving Layer}\\[1pt]\tiny Atomic Cutover: POST /api/v1/pipeline/cutover\\\tiny Active pointer: v1 $\longrightarrow$ v2 in 0\,ms};
+  {\textbf{FastAPI Serving Layer}\\[1pt]\tiny Atomic Cutover: POST /api/v1/pipeline/cutover\\\tiny Updates ACTIVE\_SCORER\_VERSION (0\,ms)};
 
 % Edges
 \draw[streamflow] (log.south -| v1.north) -- (v1.north);

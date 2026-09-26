@@ -6,7 +6,7 @@
 
 % Participants
 \node[ext]   (sensor) {Bedside Sensor\\[1pt]\tiny Patient P031};
-\node[infra, right=18mm of sensor] (kafka)  {Kafka Topic\\[1pt]\tiny vitals.raw};
+\node[infra, right=18mm of sensor] (kafka)  {Kafka Topic\\[1pt]\tiny vitals.readings.v1};
 \node[stream, right=18mm of kafka]  (spark)  {PySpark Stream\\[1pt]\tiny Micro-batch (10s)};
 \node[store, right=18mm of spark]  (cass)   {Cassandra\\[1pt]\tiny Tables Q2, Q4};
 \node[serv, right=18mm of cass]   (api)    {FastAPI\\[1pt]\tiny /monitor};
@@ -31,11 +31,11 @@
 \draw[flow] ([yshift=-24mm]spark.south) -- ++(8mm,0) -- ++(0,-6mm) -- node[lbl, right] {3. NEWS2=8 $\times$ Lab Mult (1.25) = 10.0} ([yshift=-30mm]spark.south);
 
 % Step 4: Write Cassandra
-\draw[streamflow] ([yshift=-38mm]spark.south) -- node[lbl, above] {4. Upsert Q2 Snapshot (Risk=10.0)} ([yshift=-38mm]cass.south);
-\draw[alertflow]  ([yshift=-45mm]spark.south) -- node[lbl, above] {5. Insert Q4 Deterioration Event} ([yshift=-45mm]cass.south);
+\draw[streamflow] ([yshift=-38mm]spark.south) -- node[lbl, above] {4. Upsert Q2 ward\_risk\_snapshot (risk=10)} ([yshift=-38mm]cass.south);
+\draw[alertflow]  ([yshift=-45mm]spark.south) -- node[lbl, above] {5. Insert Q4 alerts\_by\_ward (CRITICAL)} ([yshift=-45mm]cass.south);
 
 % Step 5: API poll / query
-\draw[flow] ([yshift=-53mm]api.south) -- node[lbl, above] {6. SELECT * FROM Q2 LIMIT 40} ([yshift=-53mm]cass.south);
+\draw[flow] ([yshift=-53mm]api.south) -- node[lbl, above] {6. SELECT * FROM ward.ward\_risk\_snapshot LIMIT 40} ([yshift=-53mm]cass.south);
 \draw[flow] ([yshift=-60mm]cass.south) -- node[lbl, above] {7. Return sorted worst-first} ([yshift=-60mm]api.south);
 
 % Step 6: Console update
