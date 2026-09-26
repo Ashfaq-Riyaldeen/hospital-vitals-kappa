@@ -18,3 +18,5 @@ labs/inbox/.tmp/
 *.fls
 *.fdb_latexmk
 *.synctex.gz
+*.out
+*.toc
