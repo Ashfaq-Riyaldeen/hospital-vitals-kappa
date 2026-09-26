@@ -24,7 +24,7 @@ Read the architectural analysis in [`plan/01-architecture-decision.md`](plan/01-
 
 1. **One Clinical Rule, One Implementation**: `ward/clinical/` is the sole package where risk scores and NEWS2 subscores are computed. The AST test `tests/unit/test_news2.py::test_only_one_scorer_exists` scans the entire repository outside `ward/clinical/` and immediately fails if any function or method name contains `score` or `news2`.
 2. **Pure Orchestration with Airflow**: Airflow DAGs (`airflow/dags/`) perform zero data transformations, aggregations, or clinical calculations. Airflow strictly coordinates ingestion sensing, replay execution, and reporting. Enforced by `tests/unit/test_dag_purity.py`.
-3. **Kafka Retention IS the Historical Store**: The `vitals.readings.v1` topic retains 30 simulated days of high-frequency telemetry. Stream reprocessing is performed by replaying this log from offset 0 with a dedicated consumer group.
+3. **Kafka Retention IS the Historical Store**: The `vitals.raw` topic retains 30 simulated days of high-frequency telemetry. Stream reprocessing is performed by replaying this log from offset 0 with a dedicated consumer group.
 4. **Silence Is Not Safety**: In clinical monitoring, absence of alerts must never be mistaken for absence of risk. If a stream processor dies, the ward monitor must not freeze green; it empties via Cassandra TTL (120s) and triggers the critical alert `WardMonitoringSilent`.
 5. **Replay Invariant Verification**: Re-deriving history under revised clinical rules (NEWS2 SpO2 Scale 2 for COPD patients) must only reduce scores for COPD patients (by 2-3 points) while leaving the non-COPD control group 100% bit-identical. Enforced by `tests/unit/test_replay_expected_diff.py`.
 
@@ -115,7 +115,7 @@ The platform operates at **288× acceleration**:
 | `ward/replay/` | Replay runner, version comparison engine, and cutover mechanics |
 | `airflow/dags/` | 5 production DAGs: lab ingest, daily report, replay coordination, healthcheck, retention |
 | `observability/` | Prometheus scrape configs, alert rules, Alertmanager routing, and Grafana dashboards as code |
-| `tests/` | 365 passing automated tests (AST purity, unit tests, contract tests, DAG integrity, schemas) |
+| `tests/` | 369 passing automated tests (AST purity, unit tests, contract tests, DAG integrity, schemas) |
 | `plan/` | 16 exhaustive architecture planning documents |
 
 ## Team Contributions
