@@ -515,48 +515,39 @@ def generate_kafka_topics_html() -> str:
           </thead>
           <tbody>
             <tr>
-              <td><strong>vitals.readings.v1</strong></td>
+              <td><strong>vitals.raw</strong></td>
               <td>6</td>
               <td>1</td>
               <td>Avro (Schema Registry)</td>
               <td><code>patient_id</code> (Strict Bed Affinity)</td>
-              <td>30 Sim-Days (Log Replay Target)</td>
+              <td>30 Days (Log Replay Target)</td>
               <td><code>ward-stream-v1</code>, <code>ward-stream-v2-replay</code></td>
             </tr>
             <tr>
-              <td><strong>labs.results.v1</strong></td>
-              <td>3</td>
+              <td><strong>labs.raw</strong></td>
               <td>1</td>
-              <td>Avro (Schema Registry)</td>
-              <td><code>patient_id|test_type</code></td>
-              <td>Compacted (Latest Result per Test)</td>
-              <td><code>ward-stream-v1</code></td>
-            </tr>
-            <tr>
-              <td><strong>ward.admissions.v1</strong></td>
-              <td>3</td>
               <td>1</td>
               <td>Avro (Schema Registry)</td>
               <td><code>patient_id</code></td>
-              <td>Compacted (Ward Reference Data)</td>
+              <td>30 Days</td>
               <td><code>ward-stream-v1</code></td>
             </tr>
             <tr>
-              <td><strong>ward.alerts.v1</strong></td>
+              <td><strong>alerts.clinical</strong></td>
               <td>3</td>
               <td>1</td>
               <td>JSON / Avro</td>
               <td><code>ward_id</code></td>
-              <td>30 Sim-Days (Clinical Alert Stream)</td>
+              <td>7 Days</td>
               <td><code>ward-alertmanager-bridge</code></td>
             </tr>
             <tr>
-              <td><strong>vitals.dlq.v1</strong></td>
+              <td><strong>dlq.vitals</strong></td>
               <td>1</td>
               <td>1</td>
               <td>JSON</td>
               <td><code>error_code</code></td>
-              <td>30 Sim-Days (Corrupt / Malformed Telemetry)</td>
+              <td>90 Days</td>
               <td><code>ward-sre-monitor</code></td>
             </tr>
           </tbody>
