@@ -101,3 +101,25 @@ def test_a_non_copd_change_or_an_upward_change_is_reported() -> None:
     assert report.control_group_bit_identical is False
     assert report.non_copd_evaluations_changed == 1
     assert report.upward_changes == 1
+
+
+def test_upward_change_on_oxygen_at_93_or_more_is_expected() -> None:
+    """Scale 2 scores over-oxygenation. The first real replay showed 276 upward
+    changes for COPD patients, every one on oxygen at SpO2 93 %+. Those are correct;
+    an upward change without that explanation is not."""
+    now = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+    later = datetime(2026, 4, 1, 12, 15, 0, tzinfo=UTC)
+    report = evaluate_version_differences(
+        trajectories_v1=[
+            _make_row("P001", "v1", now, composite=2, tier="LOW"),
+            _make_row("P001", "v1", later, composite=2, tier="LOW"),
+        ],
+        trajectories_v2=[
+            _make_row("P001", "v2", now, composite=4, tier="LOW_MEDIUM"),
+            _make_row("P001", "v2", later, composite=4, tier="LOW_MEDIUM"),
+        ],
+        copd_patient_ids={"P001"},
+        oxygenation={("P001", now): (97, True), ("P001", later): (90, False)},
+    )
+    assert report.upward_changes == 2
+    assert report.unexpected_upward_changes == 1

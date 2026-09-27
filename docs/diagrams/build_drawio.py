@@ -469,7 +469,7 @@ def d4_replay() -> Diagram:
     )
     d.edge(cass, diff)
     check = d.box(
-        "only COPD patients<br>changed, and only<br>downward?", 340, 325, 170, 100, "decision"
+        "only COPD patients<br>changed, in the<br>expected direction?", 340, 325, 170, 100, "decision"
     )
     d.edge(diff, check)
     stop = d.box("stop: the new rule<br>does something<br>unexpected", 360, 470, 130, 70, "ext")

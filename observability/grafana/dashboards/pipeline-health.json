@@ -180,7 +180,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "sum(rate(readings_dlq_total[5m])) / sum(rate(readings_validated_total[5m]))",
+          "expr": "sum(rate(readings_dlq_total{job=\"ward-stream\"}[5m])) / sum(rate(readings_validated_total{job=\"ward-stream\"}[5m]))",
           "legendFormat": "",
           "instant": false,
           "range": true
@@ -467,7 +467,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "sum(rate(readings_dlq_total[1m]))",
+          "expr": "sum(rate(readings_dlq_total{job=\"ward-stream\"}[1m]))",
           "legendFormat": "dead-lettered",
           "instant": false,
           "range": true
@@ -607,8 +607,8 @@
     {
       "id": 12,
       "type": "table",
-      "title": "Injected faults vs dead-lettered, since start",
-      "description": "The fault injector is the control: every impossible reading it injects should come out in the dead-letter queue under the same reason. Duplicates are skipped by id rather than dead-lettered, so they appear on the left only.",
+      "title": "Injected faults vs dead-lettered",
+      "description": "The fault injector is the control: every impossible reading it injects should come out in the live stream's dead-letter queue under the same reason. The stream's counters start again from zero when the stream restarts, so after a restart the right column only counts since then. Duplicates are skipped by id rather than dead-lettered.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
@@ -638,7 +638,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "sum by (reason) (readings_dlq_total)",
+          "expr": "sum by (reason) (readings_dlq_total{job=\"ward-stream\"})",
           "legendFormat": "dead-lettered",
           "instant": true,
           "range": false,
@@ -703,7 +703,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "sum by (topic) (rate(kafka_topic_partition_current_offset{topic=~\"vitals.*|labs.*|ward.*\"}[2m]))",
+          "expr": "sum by (topic) (delta(kafka_topic_partition_current_offset{topic=~\"vitals.*|labs.*|ward.*\"}[2m])) / 120",
           "legendFormat": "{{topic}}",
           "instant": false,
           "range": true

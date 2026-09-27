@@ -119,6 +119,7 @@ def wait_for_replay(
 ) -> ReplayStatus:
     """Poll the v2 stream until it has passed every recorded end offset."""
     deadline = time.monotonic() + timeout_seconds
+    watched_catch_up = False  # only then is the elapsed time a replay duration
     while time.monotonic() < deadline:
         try:
             status.current_offsets = read_stream_offsets(metrics_url, status.target_version)
@@ -131,6 +132,8 @@ def wait_for_replay(
                 "replay_events_remaining": float(status.remaining_events),
             },
         )
+        if status.current_offsets and not status.is_complete:
+            watched_catch_up = True
         log.info(
             "replay_progress",
             progress_pct=status.progress_pct,
@@ -139,14 +142,13 @@ def wait_for_replay(
         )
         if status.is_complete:
             status.completed_at = datetime.now(UTC)
-            metrics.push_gauges(
-                "ward-replay",
-                {
-                    "replay_progress_pct": 100.0,
-                    "replay_events_remaining": 0.0,
-                    "replay_duration_seconds": status.duration_seconds or 0.0,
-                },
-            )
+            final = {"replay_progress_pct": 100.0, "replay_events_remaining": 0.0}
+            if watched_catch_up:
+                # A check that starts after the replay has finished must not publish
+                # its own few milliseconds as "the replay took 25 ms" (seen when the
+                # Airflow run followed a replay started by `make replay`).
+                final["replay_duration_seconds"] = status.duration_seconds or 0.0
+            metrics.push_gauges("ward-replay", final)
             log.info(
                 "replay_complete",
                 events=status.total_events,

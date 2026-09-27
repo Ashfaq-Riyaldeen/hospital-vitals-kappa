@@ -60,7 +60,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "replay_progress_pct",
+          "expr": "replay_progress_pct{job=\"ward-replay\"}",
           "legendFormat": "",
           "instant": false,
           "range": true
@@ -121,7 +121,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "replay_events_remaining",
+          "expr": "replay_events_remaining{job=\"ward-replay\"}",
           "legendFormat": "",
           "instant": false,
           "range": true
@@ -181,7 +181,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "replay_duration_seconds",
+          "expr": "replay_duration_seconds{job=\"ward-replay\"}",
           "legendFormat": "",
           "instant": false,
           "range": true

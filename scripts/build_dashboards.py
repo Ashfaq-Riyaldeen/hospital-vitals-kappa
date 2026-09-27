@@ -303,7 +303,8 @@ def pipeline_health() -> None:
         "faults at about 1.6 %, so this should sit near that.",
         [
             (
-                "sum(rate(readings_dlq_total[5m])) / sum(rate(readings_validated_total[5m]))",
+                'sum(rate(readings_dlq_total{job="ward-stream"}[5m])) / '
+                'sum(rate(readings_validated_total{job="ward-stream"}[5m]))',
                 "",
             )
         ],
@@ -361,7 +362,7 @@ def pipeline_health() -> None:
         [
             ('sum(rate(readings_produced_total{status="ok"}[1m]))', "readings in"),
             ('sum(rate(risk_scores_written_total{scorer_version="v1"}[1m]))', "scores out"),
-            ("sum(rate(readings_dlq_total[1m]))", "dead-lettered"),
+            ('sum(rate(readings_dlq_total{job="ward-stream"}[1m]))', "dead-lettered"),
         ],
         12,
         8,
@@ -370,8 +371,7 @@ def pipeline_health() -> None:
     b.panel(
         "timeseries",
         "End-to-end latency",
-        "Monitor to Cassandra, in real seconds. The 5-second micro-batch trigger sets "
-        "the floor.",
+        "Monitor to Cassandra, in real seconds. The 5-second micro-batch trigger sets the floor.",
         [
             (
                 "histogram_quantile(0.5, sum by (le) "
@@ -401,17 +401,19 @@ def pipeline_health() -> None:
     )
     b.panel(
         "table",
-        "Injected faults vs dead-lettered, since start",
+        "Injected faults vs dead-lettered",
         "The fault injector is the control: every impossible reading it injects should "
-        "come out in the dead-letter queue under the same reason. Duplicates are "
-        "skipped by id rather than dead-lettered, so they appear on the left only.",
+        "come out in the live stream's dead-letter queue under the same reason. The "
+        "stream's counters start again from zero when the stream restarts, so after a "
+        "restart the right column only counts since then. Duplicates are skipped by id "
+        "rather than dead-lettered.",
         [
             (
                 'sum by (reason) (label_replace(defects_injected_total, "reason", "$1", '
                 '"defect_type", "(.*)"))',
                 "injected",
             ),
-            ("sum by (reason) (readings_dlq_total)", "dead-lettered"),
+            ('sum by (reason) (readings_dlq_total{job="ward-stream"})', "dead-lettered"),
         ],
         12,
         8,
@@ -438,8 +440,8 @@ def pipeline_health() -> None:
         "From kafka-exporter. Alerts and dead letters are small streams beside vitals.",
         [
             (
-                "sum by (topic) (rate(kafka_topic_partition_current_offset"
-                '{topic=~"vitals.*|labs.*|ward.*"}[2m]))',
+                "sum by (topic) (delta(kafka_topic_partition_current_offset"
+                '{topic=~"vitals.*|labs.*|ward.*"}[2m])) / 120',
                 "{{topic}}",
             )
         ],
@@ -465,7 +467,7 @@ def replay_comparison() -> None:
         "Replay progress",
         "Share of the log the v2 stream has re-scored, measured from its per-partition "
         "offsets against the end offsets recorded when the replay started.",
-        [("replay_progress_pct", "")],
+        [('replay_progress_pct{job="ward-replay"}', "")],
         6,
         4,
         unit="percent",
@@ -477,7 +479,7 @@ def replay_comparison() -> None:
         "stat",
         "Events remaining",
         "Readings still to be re-scored.",
-        [("replay_events_remaining", "")],
+        [('replay_events_remaining{job="ward-replay"}', "")],
         6,
         4,
         decimals=0,
@@ -488,7 +490,7 @@ def replay_comparison() -> None:
         "stat",
         "Replay duration",
         "Real seconds from the start of the replay to catching up with the log.",
-        [("replay_duration_seconds", "")],
+        [('replay_duration_seconds{job="ward-replay"}', "")],
         6,
         4,
         unit="s",

@@ -14,7 +14,7 @@ Workflow:
            |
     compute_version_diff     <- compare every reading scored under both versions
            |
-    check_expected_result    <- only COPD patients changed, and only downward
+    check_expected_result    <- only COPD patients changed; up only on oxygen at 93 %+
            |
     await_human_approval     <- DELIBERATE STOPPING POINT: clinical sign-off
            |
@@ -154,6 +154,7 @@ def ward_replay() -> None:
             "copd_changed": report.copd_evaluations_changed,
             "control_changed": report.non_copd_evaluations_changed,
             "upward_changes": report.upward_changes,
+            "unexpected_upward": report.unexpected_upward_changes,
             "replayed_events": replay["events"],
         }
         print(summary)
@@ -162,14 +163,16 @@ def ward_replay() -> None:
     @task
     def check_expected_result(summary: dict[str, Any]) -> str:
         """The expected answer is known before the replay: only COPD patients change,
-        and only downward. Anything else stops the run before anyone is asked to
-        approve a cutover."""
+        downward for their usual low saturation and upward only when they are on
+        oxygen at 93 % or more. Anything else stops the run before anyone is asked
+        to approve a cutover."""
         if summary["evaluations"] == 0:
             raise AirflowFailException("no readings were scored under both versions")
-        if summary["control_changed"] or summary["upward_changes"]:
+        if summary["control_changed"] or summary["unexpected_upward"]:
             raise AirflowFailException(
                 f"unexpected changes: {summary['control_changed']} in non-COPD patients, "
-                f"{summary['upward_changes']} upward. See {summary['report_path']}."
+                f"{summary['unexpected_upward']} unexplained upward. "
+                f"See {summary['report_path']}."
             )
         return str(summary["report_path"])
 

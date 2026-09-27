@@ -8,9 +8,12 @@ Answers the clinical governance question:
 Did we miss anyone? Are we about to stop alerting on someone we were alerting on yesterday?"
 
 Expected result, known before the replay runs:
-- Patients with copd_scale2 == True: some NEWS2 scores change, and only DOWNWARD
-  (Scale 2 stops penalising their usual 88-92 % saturation).
-- Every other patient: zero changes. This is the control group.
+- Every patient without copd_scale2: zero changes. This is the control group.
+- Patients with copd_scale2: scores go DOWN when their usual 88-92 % saturation is
+  no longer penalised, and go UP only when they are on supplemental oxygen at 93 %
+  or more - Scale 2 scores over-oxygenation, which is a real risk for them. The
+  first version of this check expected "only downward"; the first real replay showed
+  276 upward changes, every one of them on oxygen at 93 % or more.
 """
 
 from __future__ import annotations
@@ -72,6 +75,7 @@ class ReplayComparisonReport:
     estimated_false_alarms_suppressed: int
     new_alarms_raised: int
     upward_changes: int = 0
+    unexpected_upward_changes: int = 0
     patient_summaries: list[PatientDiffSummary] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -94,7 +98,8 @@ class ReplayComparisonReport:
             f"- **COPD Patients (copd_scale2 = True)**: {self.copd_patients_count} patients  ",
             (
                 f"  - Re-evaluations Changed: {self.copd_evaluations_changed:,} "
-                f"(upward changes anywhere: {self.upward_changes})  "
+                f"(upward: {self.upward_changes}, of which not explained by oxygen "
+                f"at 93 %+: {self.unexpected_upward_changes})  "
             ),
             (
                 f"- **Non-COPD Control Group (copd_scale2 = False)**: "
@@ -151,6 +156,7 @@ def evaluate_version_differences(
     copd_patient_ids: set[str],
     alerts_v1: dict[str, int] | None = None,
     alerts_v2: dict[str, int] | None = None,
+    oxygenation: dict[tuple[str, Any], tuple[int | None, bool]] | None = None,
 ) -> ReplayComparisonReport:
     """Compare the two versions' NEWS2 scores, reading by reading.
 
@@ -167,7 +173,7 @@ def evaluate_version_differences(
         patient_evals[p_id].append(s_at)
 
     total_evals = total_changed = total_identical = 0
-    copd_changed = non_copd_changed = upward = 0
+    copd_changed = non_copd_changed = upward = unexpected_up = 0
     false_alarms_suppressed = new_alarms = 0
     tier_matrix: dict[str, int] = defaultdict(int)
     patient_summaries: list[PatientDiffSummary] = []
@@ -197,7 +203,11 @@ def evaluate_version_differences(
             if delta != 0:
                 p_changed += 1
                 total_changed += 1
-                upward += delta > 0
+                if delta > 0:
+                    upward += 1
+                    spo2, on_o2 = (oxygenation or {}).get((p_id, t), (None, False))
+                    if not (is_copd and on_o2 and spo2 is not None and spo2 >= 93):
+                        unexpected_up += 1
                 if is_copd:
                     copd_changed += 1
                 else:
@@ -238,6 +248,7 @@ def evaluate_version_differences(
         estimated_false_alarms_suppressed=false_alarms_suppressed,
         new_alarms_raised=new_alarms,
         upward_changes=upward,
+        unexpected_upward_changes=unexpected_up,
         patient_summaries=patient_summaries,
     )
 
@@ -279,6 +290,14 @@ def extract_ward_differences(
             dao.get_patient_risk_history(pid, scorer_version=target_version, limit=HISTORY_LIMIT)
         )
 
+    # Vitals are read AFTER the scores. The stream writes a reading's vitals row
+    # before its score, so every score read above already has its vitals; reading
+    # them first let a reading scored in between look like an unexplained change.
+    oxygenation: dict[tuple[str, Any], tuple[int | None, bool]] = {}
+    for pid in sorted(copd):
+        for v in dao.get_patient_vitals(pid, limit=HISTORY_LIMIT):
+            oxygenation[(pid, v.measured_at)] = (v.spo2, v.on_supplemental_oxygen)
+
     days = sorted({r.scored_at.date() for r in trajectories_v1 + trajectories_v2})
     alerts: dict[str, dict[str, int]] = {base_version: {}, target_version: {}}
     for version, counts in alerts.items():
@@ -292,6 +311,7 @@ def extract_ward_differences(
         copd_patient_ids=copd,
         alerts_v1=alerts[base_version],
         alerts_v2=alerts[target_version],
+        oxygenation=oxygenation,
     )
 
 
@@ -337,6 +357,7 @@ def main() -> None:
             f"(Control Invariant: {report.control_group_bit_identical})"
         )
         print(f"Upward changes         : {report.upward_changes}")
+        print(f"  not oxygen at 93 %+  : {report.unexpected_upward_changes}")
         print(f"Below NEWS2 5 under v2 : {report.estimated_false_alarms_suppressed}")
         print(f"Report artifact written to: {md_file}")
         print("=" * 60 + "\n")
