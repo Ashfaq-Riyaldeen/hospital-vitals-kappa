@@ -5,7 +5,7 @@
 
 The .drawio files are ordinary draw.io documents and can be opened and edited in
 draw.io directly. This script keeps the six diagrams in one style: every diagram flows
-top to bottom (it stays legible at page width), all text is 12 pt, labels are short,
+top to bottom (it stays legible at page width), all text is 13 pt, labels are short,
 and one colour key is used: blue = streaming, orange = storage and serving,
 green = orchestration, grey = observability, white = outside the platform.
 """
@@ -18,7 +18,7 @@ from xml.sax.saxutils import escape
 
 HERE = Path(__file__).resolve().parent
 
-FONT = "fontFamily=Helvetica;fontSize=12;"
+FONT = "fontFamily=Helvetica;fontSize=13;"
 BASE = "whiteSpace=wrap;html=1;rounded=1;arcSize=8;" + FONT
 STYLE = {
     "stream": BASE + "fillColor=#dae8fc;strokeColor=#6c8ebf;",
