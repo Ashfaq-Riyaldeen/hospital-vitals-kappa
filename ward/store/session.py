@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from cassandra import ConsistencyLevel
 from cassandra.cluster import (
+    EXEC_PROFILE_DEFAULT,
     Cluster,
     DCAwareRoundRobinPolicy,
     ExecutionProfile,
@@ -27,7 +28,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_PROFILE = "ward_default"
 
 
 def create_cluster(
@@ -53,11 +53,14 @@ def create_cluster(
         request_timeout=15.0,
     )
 
+    # The profile must be registered under EXEC_PROFILE_DEFAULT to apply to every
+    # query. The first version passed `default_execution_profile=`, which Cluster does
+    # not accept, so no process could ever connect - hidden because every unit test
+    # mocks the session.
     cluster = Cluster(
         contact_points=contact_points,
         port=c_port,
-        execution_profiles={_DEFAULT_PROFILE: profile},
-        default_execution_profile=_DEFAULT_PROFILE,
+        execution_profiles={EXEC_PROFILE_DEFAULT: profile},
         reconnection_policy=ExponentialReconnectionPolicy(1.0, 10.0),
         protocol_version=4,
     )
