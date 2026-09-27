@@ -70,31 +70,30 @@ def ward_daily_report() -> None:
             return clock.epoch_sim.date().isoformat()
         return target.isoformat()
 
-    @task
-    def wait_for_day_complete(sim_date: str) -> bool:
-        """Verify that streaming pipeline has completed micro-batches for the target date."""
-        from ward import settings
-        from ward.store.dao import CassandraDAO
-        from ward.store.session import get_cluster
+    @task(retries=3, retry_delay=pendulum.duration(seconds=30))
+    def wait_for_day_complete(sim_date: str) -> int:
+        """Fail (and retry) until the stream has written summaries for that day.
 
-        store_cfg = settings.store()
+        The first version called the DAO with a wrong argument name, caught the
+        TypeError, and rendered an empty report anyway.
+        """
+        from datetime import date
+
+        from ward.store.dao import WardStoreDAO
+        from ward.store.session import create_cluster, get_session
+
+        cluster = create_cluster()
         try:
-            cluster, session = get_cluster(
-                contact_points=store_cfg.cassandra_hosts.split(","),
-                port=store_cfg.cassandra_port,
-                keyspace=store_cfg.keyspace,
+            dao = WardStoreDAO(get_session("ward", cluster=cluster))
+            rows = dao.get_daily_patient_summary(
+                ward_id="WARD-A", report_date=date.fromisoformat(sim_date), scorer_version="v1"
             )
-            dao = CassandraDAO(session)
-            rows = dao.get_daily_patient_summary(ward_id="WARD-A", sim_date=sim_date)
+        finally:
             cluster.shutdown()
-            if not rows:
-                print(
-                    f"Warning: No daily summary rows found yet for {sim_date}; proceeding with render"
-                )
-            return True
-        except Exception as exc:
-            print(f"Non-fatal check error: {exc}; proceeding to render")
-            return True
+        if not rows:
+            raise AirflowFailException(f"no daily summaries yet for {sim_date}")
+        print(f"{len(rows)} patient summaries for {sim_date}")
+        return len(rows)
 
     @task
     def render_clinical_report(
