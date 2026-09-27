@@ -334,6 +334,7 @@ services:
     container_name: ward-api
     depends_on:
       cassandra: { condition: service_healthy }
+      init: { condition: service_completed_successfully }
     ports:
       - "8100:8100"
     env_file: [.env]

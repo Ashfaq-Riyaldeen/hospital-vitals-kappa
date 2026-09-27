@@ -54,48 +54,58 @@ from ward.store.session import create_cluster, get_session
 log = get_logger()
 
 
+def _connect() -> None:
+    """Connect to Cassandra and publish the DAO on app.state. Raises on failure."""
+    store_cfg = settings.store()
+    # The first version called get_cluster(contact_points=..., keyspace=...),
+    # arguments that function does not take, and swallowed the TypeError.
+    cluster = create_cluster(hosts=store_cfg.cassandra_hosts, port=store_cfg.cassandra_port)
+    try:
+        session = get_session(keyspace=store_cfg.keyspace, cluster=cluster)
+    except Exception:
+        cluster.shutdown()
+        raise
+    dao = CassandraDAO(session)
+    # A cutover must survive an API restart, so the active version is read back.
+    persisted = dao.get_sim_state("ACTIVE_SCORER_VERSION")
+    if persisted:
+        app.state.active_scorer_version = persisted
+    app.state.cluster, app.state.session, app.state.dao = cluster, session, dao
+    log.info("serving_layer_connected", cassandra_hosts=store_cfg.cassandra_hosts)
+
+
+async def _connect_until_ready() -> None:
+    """Keep trying until Cassandra (and the keyspace) is there.
+
+    The API used to try once at start-up. If it started before the init container had
+    created the keyspace it stayed disconnected for good, answering 503 forever while
+    its liveness probe said it was fine.
+    """
+    while True:
+        try:
+            await asyncio.to_thread(_connect)
+            return
+        except Exception as exc:
+            log.warning("cassandra_connect_retry", error=str(exc), retry_in_seconds=5)
+            await asyncio.sleep(5)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifecycle manager configuring Cassandra DAO connection pool and structured logging."""
+    """Configure logging, then connect to Cassandra in the background, retrying."""
     obs = settings.observability()
     configure(service="ward-api", stage="serve", level=obs.log_level, json_output=obs.log_json)
+    app.state.dao = app.state.cluster = app.state.session = None
 
-    store_cfg = settings.store()
-    cluster = None
-    session = None
-    gauges_task = None
+    async def _start() -> None:
+        await _connect_until_ready()
+        await _refresh_serving_gauges()
 
-    try:
-        # The first version called get_cluster(contact_points=..., keyspace=...),
-        # arguments that function does not take. The TypeError was swallowed by the
-        # except below, so the API started "healthy" with no database at all.
-        cluster = create_cluster(hosts=store_cfg.cassandra_hosts, port=store_cfg.cassandra_port)
-        session = get_session(keyspace=store_cfg.keyspace, cluster=cluster)
-        app.state.dao = CassandraDAO(session)
-        # A cutover must survive an API restart, so the active version is read back.
-        persisted = app.state.dao.get_sim_state("ACTIVE_SCORER_VERSION")
-        if persisted:
-            app.state.active_scorer_version = persisted
-        gauges_task = asyncio.create_task(_refresh_serving_gauges())
-        app.state.cluster = cluster
-        app.state.session = session
-        log.info(
-            "serving_layer_started",
-            cassandra_hosts=store_cfg.cassandra_hosts,
-            port=store_cfg.cassandra_port,
-        )
-    except Exception as exc:
-        log.error("cassandra_connection_failed", error=str(exc))
-        app.state.dao = None
-        app.state.cluster = None
-        app.state.session = None
-
+    task = asyncio.create_task(_start())
     yield
-
-    if gauges_task:
-        gauges_task.cancel()
-    if cluster:
-        cluster.shutdown()
+    task.cancel()
+    if app.state.cluster is not None:
+        app.state.cluster.shutdown()
         log.info("serving_layer_stopped")
 
 

@@ -107,7 +107,7 @@ def parse_partition_offsets(metrics_text: str, version: str) -> dict[int, int]:
 
 
 def read_stream_offsets(metrics_url: str, version: str) -> dict[int, int]:
-    with urllib.request.urlopen(metrics_url, timeout=5) as resp:  # noqa: S310 - internal URL
+    with urllib.request.urlopen(metrics_url, timeout=5) as resp:
         return parse_partition_offsets(resp.read().decode(), version)
 
 
