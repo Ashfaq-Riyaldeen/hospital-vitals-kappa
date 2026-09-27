@@ -606,9 +606,9 @@
     },
     {
       "id": 12,
-      "type": "barchart",
-      "title": "Injected faults vs dead-lettered, last 30 min",
-      "description": "The fault injector is the control: every injected impossible reading should come out in the dead-letter queue under the same reason.",
+      "type": "table",
+      "title": "Injected faults vs dead-lettered, since start",
+      "description": "The fault injector is the control: every impossible reading it injects should come out in the dead-letter queue under the same reason. Duplicates are skipped by id rather than dead-lettered, so they appear on the left only.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
@@ -626,10 +626,11 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "sum by (defect_type) (increase(defects_injected_total[30m]))",
+          "expr": "sum by (reason) (label_replace(defects_injected_total, \"reason\", \"$1\", \"defect_type\", \"(.*)\"))",
           "legendFormat": "injected",
           "instant": true,
-          "range": false
+          "range": false,
+          "format": "table"
         },
         {
           "refId": "B",
@@ -637,10 +638,11 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "sum by (reason) (increase(readings_dlq_total[30m]))",
+          "expr": "sum by (reason) (readings_dlq_total)",
           "legendFormat": "dead-lettered",
           "instant": true,
-          "range": false
+          "range": false,
+          "format": "table"
         }
       ],
       "fieldConfig": {
@@ -661,10 +663,20 @@
       "options": {},
       "transformations": [
         {
-          "id": "joinByField",
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
           "options": {
-            "byField": "defect_type",
-            "mode": "outer"
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "reason": "Reason",
+              "Value #A": "Injected",
+              "Value #B": "Dead-lettered"
+            }
           }
         }
       ]

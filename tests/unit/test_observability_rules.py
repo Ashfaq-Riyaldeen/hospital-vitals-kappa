@@ -54,7 +54,8 @@ def _ours() -> set[str]:
 
 
 def metric_names(expr: str) -> set[str]:
-    stripped = re.sub(r"\{[^}]*\}", " ", expr)  # label matchers
+    stripped = re.sub(r'"[^"]*"', " ", expr)  # string arguments, e.g. label_replace
+    stripped = re.sub(r"\{[^}]*\}", " ", stripped)  # label matchers
     stripped = re.sub(r"\b(by|without|on|ignoring)\s*\([^)]*\)", " ", stripped)
     stripped = re.sub(r"\[[^\]]*\]", " ", stripped)  # range selectors
     tokens = set(re.findall(r"[A-Za-z_:][A-Za-z0-9_:]*", stripped))

@@ -400,20 +400,36 @@ def pipeline_health() -> None:
         8,
     )
     b.panel(
-        "barchart",
-        "Injected faults vs dead-lettered, last 30 min",
-        "The fault injector is the control: every injected impossible reading should "
-        "come out in the dead-letter queue under the same reason.",
+        "table",
+        "Injected faults vs dead-lettered, since start",
+        "The fault injector is the control: every impossible reading it injects should "
+        "come out in the dead-letter queue under the same reason. Duplicates are "
+        "skipped by id rather than dead-lettered, so they appear on the left only.",
         [
-            ("sum by (defect_type) (increase(defects_injected_total[30m]))", "injected"),
-            ("sum by (reason) (increase(readings_dlq_total[30m]))", "dead-lettered"),
+            (
+                'sum by (reason) (label_replace(defects_injected_total, "reason", "$1", '
+                '"defect_type", "(.*)"))',
+                "injected",
+            ),
+            ("sum by (reason) (readings_dlq_total)", "dead-lettered"),
         ],
         12,
         8,
         instant=True,
         decimals=0,
         transformations=[
-            {"id": "joinByField", "options": {"byField": "defect_type", "mode": "outer"}},
+            {"id": "merge", "options": {}},
+            {
+                "id": "organize",
+                "options": {
+                    "excludeByName": {"Time": True},
+                    "renameByName": {
+                        "reason": "Reason",
+                        "Value #A": "Injected",
+                        "Value #B": "Dead-lettered",
+                    },
+                },
+            },
         ],
     )
     b.panel(
