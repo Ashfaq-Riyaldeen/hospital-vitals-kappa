@@ -156,7 +156,7 @@ def test_render_from_rows_generates_html_and_pdf(
         assert pdf_p.stat().st_size > 1000
 
         content = html_p.read_text(encoding="utf-8")
-        assert "St Jude Hospital Clinical Surveillance" in content
+        assert "Ward WARD-A daily risk report" in content
         assert "WARD-A" in content
         assert "P014" in content
         assert "BED-14" in content

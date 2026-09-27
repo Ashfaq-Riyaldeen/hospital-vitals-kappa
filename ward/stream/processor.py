@@ -13,6 +13,7 @@ readings always arrive in order on one partition.
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -111,16 +112,23 @@ class StreamProcessor:
         self,
         scorer_version: str,
         admissions: dict[str, Admission] | None = None,
-        labs: dict[str, dict[str, LabResult]] | None = None,
+        labs: dict[str, dict[str, LabResult | list[LabResult]]] | None = None,
         window_hours: int = 4,
         min_readings_for_trend: int = 4,
         watermark_minutes: int = 60,
         ward_id: str = "WARD-A",
+        summary_loader: Callable[[str, date], DailyPatientSummaryRow | None] | None = None,
     ) -> None:
         self.scorer_version = scorer_version
         # Shared with the reference-data reader thread, which keeps them current.
         self.admissions: dict[str, Admission] = admissions if admissions is not None else {}
-        self.labs: dict[str, dict[str, LabResult]] = labs if labs is not None else {}
+        # Per patient and test: one result, or the history of results in the order
+        # they were reported (the stream keeps a history; see _labs_as_of).
+        self.labs: dict[str, dict[str, LabResult | list[LabResult]]] = (
+            labs if labs is not None else {}
+        )
+        # Reads a day's stored summary so a restarted stream carries on from it.
+        self.summary_loader = summary_loader
         self.window = timedelta(hours=window_hours)
         self.min_readings_for_trend = min_readings_for_trend
         self.watermark = timedelta(minutes=watermark_minutes)
@@ -261,11 +269,17 @@ class StreamProcessor:
         Without this, a replay from offset 0 would let a day-1 reading see day-2
         results - scoring the past with knowledge it could not have had.
         """
-        return {
-            test.lower(): lab
-            for test, lab in self.labs.get(patient_id, {}).items()
-            if lab.reported_at <= as_of
-        }
+        chosen: dict[str, LabResult] = {}
+        for test, held in self.labs.get(patient_id, {}).items():
+            history = held if isinstance(held, list) else [held]
+            # The newest result reported by then. Keeping only the newest result
+            # overall meant a restarted stream, working through yesterday's backlog,
+            # saw today's labs (reported later), discarded them, and scored
+            # yesterday as if no labs existed.
+            known = [lab for lab in history if lab.reported_at <= as_of]
+            if known:
+                chosen[test.lower()] = max(known, key=lambda lab: lab.reported_at)
+        return chosen
 
     def _new_alerts(
         self, state: _PatientState, candidates: list[ClinicalAlert], now: datetime
@@ -304,6 +318,22 @@ class StreamProcessor:
             totals = _DayTotals(
                 bed_id=reading.bed_id, admitting_condition=enriched.admitting_condition
             )
+            stored = self.summary_loader(reading.patient_id, day) if self.summary_loader else None
+            if stored is not None:
+                # Carry on from what is already stored. Without this, a stream that
+                # restarts in the middle of a day starts that day from zero and its
+                # next upsert overwrites the whole day's summary with a few readings
+                # (seen after the outage test: 10 readings instead of 96).
+                totals.readings_count = stored.readings_count
+                totals.readings_rejected = stored.readings_rejected
+                totals.news2_sum = round(float(stored.mean_news2) * stored.readings_count)
+                totals.max_news2 = stored.max_news2
+                totals.max_composite_risk = stored.max_composite_risk
+                totals.final_risk_tier = stored.final_risk_tier
+                totals.lab_contribution = stored.lab_contribution
+                totals.labs_stale = stored.labs_stale
+                totals.alert_count = stored.alert_count
+                totals.highest_severity = stored.highest_severity
             self._days[key] = totals
             # Only today and yesterday can still change; drop older days.
             for old in [k for k in self._days if k[1] < day - timedelta(days=1)]:

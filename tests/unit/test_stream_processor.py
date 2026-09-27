@@ -259,3 +259,39 @@ def test_future_stamp_is_caught_even_in_a_backlog() -> None:
             assert out.kind == KIND_REJECTED and out.reason == "FUTURE_TIMESTAMP"
         else:
             assert out.kind == KIND_SCORED
+
+
+def test_a_restarted_stream_carries_on_from_the_stored_daily_summary() -> None:
+    """After the outage test the restarted stream wrote day 2's summary from its last
+    10 readings only, overwriting the full day. It must continue from what is stored."""
+    first = StreamProcessor("v1")
+    out = None
+    for i in range(3):
+        at = EPOCH + timedelta(minutes=15 * i)
+        out = first.process(_reading(at, respiratory_rate=22 if i == 1 else 16), at)
+    assert out is not None and out.summary is not None
+    stored = out.summary
+
+    restarted = StreamProcessor(
+        "v1",
+        summary_loader=lambda pid, day: stored if (pid, day) == ("P001", EPOCH.date()) else None,
+    )
+    at = EPOCH + timedelta(minutes=45)
+    after = restarted.process(_reading(at), at)
+    assert after.summary is not None
+    assert after.summary.readings_count == 4
+    assert after.summary.max_news2 == stored.max_news2
+
+
+def test_a_backlog_reading_is_joined_with_the_labs_of_its_own_time() -> None:
+    """The cache kept only the newest result, so while catching up on yesterday the
+    stream saw today's labs, rejected them as reported later, and used none."""
+    day1 = _lab("lactate", 3.8, EPOCH + timedelta(hours=6))
+    day2 = _lab("lactate", 1.0, EPOCH + timedelta(days=1, hours=6))
+    proc = StreamProcessor("v1", labs={"P001": {"lactate": [day1, day2]}})
+    at = EPOCH + timedelta(hours=20)
+    old = proc.process(_reading(at), clock_now=at)
+    assert old.composite is not None and old.composite.lab_contribution == 1
+    at2 = EPOCH + timedelta(days=1, hours=8)
+    new = proc.process(_reading(at2), clock_now=at2)
+    assert new.composite is not None and new.composite.lab_contribution == 0

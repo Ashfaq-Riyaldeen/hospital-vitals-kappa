@@ -21,7 +21,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from types import FrameType
@@ -39,6 +39,7 @@ from ward.obs.log import configure, get_logger
 from ward.simclock import SimClock, read_anchor
 from ward.store.dao import (
     AlertRow,
+    DailyPatientSummaryRow,
     LabResultRow,
     RiskScoreRow,
     VitalReadingRow,
@@ -78,7 +79,9 @@ class ReferenceData:
         self.k_cfg = k_cfg
         self._on_lab = on_lab
         self.admissions: dict[str, Admission] = {}
-        self.labs: dict[str, dict[str, LabResult]] = {}
+        # Every result per patient and test, in the order reported, so a reading is
+        # joined with the labs that existed at ITS time, even during a backlog.
+        self.labs: dict[str, dict[str, LabResult | list[LabResult]]] = {}
         self._consumer = Consumer(
             {
                 "bootstrap.servers": k_cfg.bootstrap,
@@ -100,7 +103,11 @@ class ReferenceData:
                 metrics.admissions_refresh_total.inc()
             else:
                 lab = LabResult(**deserialize(value, topic, schema_file="lab_result.avsc"))
-                self.labs.setdefault(lab.patient_id, {})[lab.test_type.lower()] = lab
+                history = self.labs.setdefault(lab.patient_id, {}).setdefault(
+                    lab.test_type.lower(), []
+                )
+                if isinstance(history, list) and lab not in history:
+                    history.append(lab)
                 metrics.lab_results_cached_total.inc()
                 if self._on_lab is not None:
                     self._on_lab(lab)
@@ -190,6 +197,7 @@ class StreamPipelineRunner:
             window_hours=self.proc_cfg.trend_window_sim_hours,
             min_readings_for_trend=self.proc_cfg.min_readings_for_trend,
             watermark_minutes=self.proc_cfg.watermark_sim_minutes,
+            summary_loader=self._stored_summary,
         )
 
     def stop(self) -> None:
@@ -364,6 +372,12 @@ class StreamPipelineRunner:
         metrics.stream_end_to_end_seconds.labels(scorer_version=v).observe(
             max(0.0, time.time() - reading.ingest_time.timestamp())
         )
+
+    def _stored_summary(self, patient_id: str, day: date) -> DailyPatientSummaryRow | None:
+        rows = self.dao.get_daily_patient_summary(
+            ward_id="WARD-A", report_date=day, scorer_version=self.scorer_version
+        )
+        return next((r for r in rows if r.patient_id == patient_id), None)
 
     # ---------------------------------------------------------------- output
 
