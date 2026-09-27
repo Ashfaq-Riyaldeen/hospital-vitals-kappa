@@ -231,3 +231,25 @@ def test_unscripted_patients_are_untouched_by_the_narratives(patient: str) -> No
     now = EPOCH + timedelta(days=1, hours=SPIKE_HOUR)
     stepped = step(state, baseline, now, rng)
     assert apply(stepped, NarrativeContext(patient, now, EPOCH)) == stepped
+
+
+def test_sepsis_never_produces_an_impossible_blood_pressure() -> None:
+    """The validator rejects systolic <= diastolic. In the final clean run the sepsis
+    script produced exactly that for P014 (systolic 96, diastolic 97), so the sickest
+    patient's real readings were dead-lettered. Driven through the real monitor,
+    because it depends on P014's baseline and the ward's random sequence."""
+    from ward.producers import bedside_monitor
+    from ward.simclock import SimClock
+
+    clock = SimClock(epoch_wall=datetime(2026, 9, 27, tzinfo=UTC), epoch_sim=EPOCH, day_seconds=300)
+    monitors = bedside_monitor.BedsideMonitors(clock, dry_run=True)
+    inverted = 0
+    t = EPOCH
+    while t < EPOCH + timedelta(days=3):
+        for patient in monitors.patients:
+            payload, defect = monitors._reading(patient, t)
+            sbp, dbp = payload["systolic_bp"], payload["diastolic_bp"]
+            if defect is None and sbp is not None and sbp <= dbp:
+                inverted += 1
+        t += timedelta(minutes=15)
+    assert inverted == 0, f"{inverted} real readings had systolic <= diastolic"

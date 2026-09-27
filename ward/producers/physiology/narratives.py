@@ -127,12 +127,19 @@ def apply(state: VitalsState, ctx: NarrativeContext) -> VitalsState:
         progress = _sepsis_progress(ctx)
         if progress is None:
             return state
+        systolic = _lerp(*SEPSIS_TRAJECTORY["systolic_bp"], progress)
         return replace(
             state,
             temperature=_lerp(*SEPSIS_TRAJECTORY["temperature"], progress),
             heart_rate=_lerp(*SEPSIS_TRAJECTORY["heart_rate"], progress),
             respiratory_rate=_lerp(*SEPSIS_TRAJECTORY["respiratory_rate"], progress),
-            systolic_bp=_lerp(*SEPSIS_TRAJECTORY["systolic_bp"], progress),
+            systolic_bp=systolic,
+            # Diastolic falls with systolic. Without this the script took systolic
+            # down to 96 and left diastolic near 97, so P014's own readings were
+            # dead-lettered as "BP_INVERTED" during the very illness the system
+            # exists to catch (16 readings in the final run; the injected-vs-
+            # dead-lettered control showed 63 rejections against 47 injected).
+            diastolic_bp=min(state.diastolic_bp, systolic - 15),
             spo2=_lerp(*SEPSIS_TRAJECTORY["spo2"], progress),
         )
 
