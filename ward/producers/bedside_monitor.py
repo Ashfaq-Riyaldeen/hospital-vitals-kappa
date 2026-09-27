@@ -58,6 +58,7 @@ class BedsideMonitors:
         # rather than a fabricated one -- a duplicate of an id that never existed
         # would not exercise the deduplication path the way a real replay does.
         self._last_reading_id: dict[str, str] = {}
+        self._artefacts_sent: set[str] = set()
 
     # ------------------------------------------------------------------ build
 
@@ -67,7 +68,16 @@ class BedsideMonitors:
         context = narratives.NarrativeContext(patient.patient_id, sim_now, self.clock.epoch_sim)
         patient.state = narratives.apply(patient.state, context)
         # Defects and P007's artefact touch the emitted reading, never the patient.
-        state, defect = defects.maybe_inject(narratives.emitted(patient.state, context), self.rng)
+        shown = narratives.emitted(patient.state, context)
+        if shown is not patient.state:
+            # The artefact is ONE reading. Its window is 15 simulated minutes, and a
+            # host clock step of half a second (seen under WSL) moves the next sweep
+            # 2-3 simulated minutes, which once put two 145 bpm readings in the window.
+            if patient.patient_id in self._artefacts_sent:
+                shown = patient.state
+            else:
+                self._artefacts_sent.add(patient.patient_id)
+        state, defect = defects.maybe_inject(shown, self.rng)
         measured_at = sim_now
         reading_id = str(uuid.uuid4())
 
