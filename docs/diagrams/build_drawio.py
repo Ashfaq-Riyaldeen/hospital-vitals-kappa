@@ -4,9 +4,10 @@
     make -C docs/diagrams                               # exports *.pdf with the drawio CLI
 
 The .drawio files are ordinary draw.io documents and can be opened and edited in
-draw.io directly; this script only keeps the six diagrams in one style and one colour
-key: blue = streaming, orange = storage and serving, green = orchestration,
-grey = observability, white = outside the platform.
+draw.io directly. This script keeps the six diagrams in one style: every diagram flows
+top to bottom (it stays legible at page width), all text is 12 pt, labels are short,
+and one colour key is used: blue = streaming, orange = storage and serving,
+green = orchestration, grey = observability, white = outside the platform.
 """
 
 from __future__ import annotations
@@ -25,23 +26,18 @@ STYLE = {
     "orch": BASE + "fillColor=#d5e8d4;strokeColor=#82b366;",
     "obs": BASE + "fillColor=#f5f5f5;strokeColor=#666666;",
     "ext": BASE + "fillColor=#ffffff;strokeColor=#333333;",
-    "person": "shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;"
-    + FONT
-    + "fillColor=#ffffff;strokeColor=#333333;",
-    "topic": "whiteSpace=wrap;html=1;rounded=0;align=left;spacingLeft=6;"
-    + FONT
-    + "fontSize=11;fillColor=#ffffff;strokeColor=#6c8ebf;",
-    "group_stream": "whiteSpace=wrap;html=1;rounded=1;arcSize=4;verticalAlign=top;"
-    + FONT
-    + "fontStyle=1;fillColor=#eef4fc;strokeColor=#6c8ebf;",
-    "title": "text;html=1;align=left;verticalAlign=middle;" + FONT + "fontSize=13;fontStyle=1;",
-    "note": "text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;" + FONT + "fontSize=11;",
+    "group": "whiteSpace=wrap;html=1;rounded=1;arcSize=4;verticalAlign=top;align=left;"
+    "spacingLeft=8;" + FONT + "fontStyle=1;fillColor=#eef4fc;strokeColor=#6c8ebf;",
+    "topic": "whiteSpace=wrap;html=1;rounded=0;" + FONT + "fillColor=#ffffff;strokeColor=#6c8ebf;",
+    "label": "text;html=1;align=left;verticalAlign=middle;" + FONT + "fontStyle=1;",
+    "note": "text;html=1;align=center;verticalAlign=middle;whiteSpace=wrap;" + FONT,
     "decision": "rhombus;whiteSpace=wrap;html=1;" + FONT + "fillColor=#fff2cc;strokeColor=#d6b656;",
-    "lifeline": "endArrow=none;dashed=1;html=1;strokeColor=#999999;",
 }
-EDGE = "edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;" + FONT
-EDGE += "fontSize=11;labelBackgroundColor=#ffffff;strokeColor=#333333;jumpStyle=arc;jumpSize=8;"
-STRAIGHT = "html=1;endArrow=block;endFill=1;" + FONT + "fontSize=11;labelBackgroundColor=#ffffff;"
+EDGE = (
+    "edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;"
+    + FONT
+    + "labelBackgroundColor=#ffffff;strokeColor=#333333;jumpStyle=arc;jumpSize=8;"
+)
 
 
 @dataclass
@@ -63,12 +59,11 @@ class Diagram:
         h: float,
         kind: str = "ext",
         extra: str = "",
-        parent: str = "1",
     ) -> str:
         cid = self._id()
         self.cells.append(
             f'<mxCell id="{cid}" value="{escape(label, {chr(34): "&quot;"})}" '
-            f'style="{STYLE[kind]}{extra}" vertex="1" parent="{parent}">'
+            f'style="{STYLE[kind]}{extra}" vertex="1" parent="1">'
             f'<mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry"/></mxCell>'
         )
         return cid
@@ -79,10 +74,8 @@ class Diagram:
         dst: str,
         label: str = "",
         extra: str = "",
-        style: str = EDGE,
         exit: tuple[float, float] | None = None,
         entry: tuple[float, float] | None = None,
-        points: list[tuple[float, float]] | None = None,
     ) -> str:
         cid = self._id()
         anchors = ""
@@ -90,59 +83,23 @@ class Diagram:
             anchors += f"exitX={exit[0]};exitY={exit[1]};exitDx=0;exitDy=0;"
         if entry:
             anchors += f"entryX={entry[0]};entryY={entry[1]};entryDx=0;entryDy=0;"
-        pts = ""
-        if points:
-            pts = (
-                '<Array as="points">'
-                + "".join(f'<mxPoint x="{x}" y="{y}"/>' for x, y in points)
-                + "</Array>"
-            )
         self.cells.append(
             f'<mxCell id="{cid}" value="{escape(label, {chr(34): "&quot;"})}" '
-            f'style="{style}{anchors}{extra}" edge="1" parent="1" source="{src}" target="{dst}">'
-            f'<mxGeometry relative="1" as="geometry">{pts}</mxGeometry></mxCell>'
+            f'style="{EDGE}{anchors}{extra}" edge="1" parent="1" source="{src}" '
+            f'target="{dst}"><mxGeometry relative="1" as="geometry"/></mxCell>'
         )
         return cid
 
-    def line(
-        self,
-        x1: float,
-        y1: float,
-        x2: float,
-        y2: float,
-        label: str = "",
-        style: str = STRAIGHT,
-        extra: str = "",
-    ) -> str:
-        cid = self._id()
-        self.cells.append(
-            f'<mxCell id="{cid}" value="{escape(label, {chr(34): "&quot;"})}" '
-            f'style="{style}{extra}" edge="1" parent="1"><mxGeometry relative="1" as="geometry">'
-            f'<mxPoint x="{x1}" y="{y1}" as="sourcePoint"/>'
-            f'<mxPoint x="{x2}" y="{y2}" as="targetPoint"/></mxGeometry></mxCell>'
-        )
-        return cid
-
-    def legend(self, x: float, y: float) -> None:
-        self.box("Colour key", x, y, 140, 20, "title")
-        for i, (kind, text) in enumerate(
-            [
-                ("stream", "Streaming"),
-                ("store", "Storage and serving"),
-                ("orch", "Orchestration"),
-                ("obs", "Observability"),
-                ("ext", "Outside the platform"),
-            ]
-        ):
-            self.box(text, x, y + 24 + i * 26, 150, 22, kind, "fontSize=11;")
+    def down(self, src: str, dst: str, label: str = "", extra: str = "") -> str:
+        """An arrow from the bottom of src to the top of dst."""
+        return self.edge(src, dst, label, extra, exit=(0.5, 1), entry=(0.5, 0))
 
     def write(self) -> Path:
-        body = "".join(self.cells)
         xml = (
             f'<mxfile host="build_drawio.py"><diagram id="{self.name}" name="{self.name}">'
             '<mxGraphModel grid="0" page="0" math="0" shadow="0"><root>'
             '<mxCell id="0"/><mxCell id="1" parent="0"/>'
-            f"{body}</root></mxGraphModel></diagram></mxfile>\n"
+            f"{''.join(self.cells)}</root></mxGraphModel></diagram></mxfile>\n"
         )
         path = HERE / f"{self.name}.drawio"
         path.write_text(xml)
@@ -152,476 +109,254 @@ class Diagram:
 def d1_context() -> Diagram:
     d = Diagram("D1-context")
     core = d.box(
-        "<b>Hospital vitals platform</b><br>(Kappa architecture)<br><br>"
-        "one stream, one scoring rule,<br>Kafka keeps the history",
-        430,
-        120,
-        300,
-        200,
+        "<b>Hospital vitals platform</b><br>one stream, one scoring rule",
+        170,
+        150,
+        480,
+        70,
         "stream",
-        "fontSize=13;",
     )
-    left = [
-        ("<b>Bedside monitors</b><br>40 beds on one ward", "a reading every<br>15 simulated min"),
-        ("<b>Pathology lab</b><br>one results file per day", "daily file, 06:00"),
-        ("<b>Admissions system</b><br>bed, condition, COPD flag", "admissions"),
+    sources = [
+        ("<b>Bedside monitors</b><br>40 beds", "vital signs"),
+        ("<b>Pathology lab</b><br>one file per day", "lab results"),
+        ("<b>Admissions</b><br>bed, COPD flag", "admissions"),
     ]
-    for i, (text, label) in enumerate(left):
-        b = d.box(text, 20, 120 + i * 70, 220, 55)
-        d.edge(b, core, label, exit=(1, 0.5), entry=(0, 0.2 + i * 0.3))
-    right = [
-        ("<b>Ward nurses</b><br>ward list, alerts", "worst patient first,<br>alerts"),
-        ("<b>Doctors</b><br>patient detail", "history, daily<br>PDF report"),
-        ("<b>Clinical governance</b><br>rule changes", "old vs new rule,<br>approve switch"),
+    for i, (text, label) in enumerate(sources):
+        b = d.box(text, i * 290, 0, 240, 50)
+        d.edge(b, core, label, exit=(0.5, 1), entry=(0.15 + i * 0.35, 0))
+    users = [
+        ("<b>Ward nurses</b>", "ward list,<br>alerts"),
+        ("<b>Doctors</b>", "history,<br>daily report"),
+        ("<b>Clinical governance</b>", "approve a<br>rule change"),
+        ("<b>Operations</b>", "pipeline<br>alerts"),
     ]
-    for i, (text, label) in enumerate(right):
-        b = d.box(text, 920, 120 + i * 70, 220, 55)
-        d.edge(core, b, label, exit=(1, 0.2 + i * 0.3), entry=(0, 0.5))
-    ops = d.box("<b>Operations engineer</b><br>keeps it running", 470, 400, 220, 55)
-    d.edge(core, ops, "pipeline alerts, dashboards", exit=(0.5, 1), entry=(0.5, 0))
+    for i, (text, label) in enumerate(users):
+        b = d.box(text, i * 210, 330, 190, 45)
+        d.edge(core, b, label, exit=(0.1 + i * 0.267, 1), entry=(0.5, 0))
     return d
 
 
 def d2_architecture() -> Diagram:
     d = Diagram("D2-layered-architecture")
-    for x, text in [
-        (20, "1. Sources"),
-        (260, "2. Log (the system of record)"),
-        (760, "3. Processing (one code path)"),
-        (1090, "4. Storage"),
-        (1390, "5. Serving"),
+    for y, text in [
+        (15, "Sources"),
+        (215, "Log"),
+        (385, "Processing"),
+        (515, "Storage"),
+        (635, "Serving"),
     ]:
-        d.box(text, x, 15, 260, 24, "title")
+        d.box(text, 0, y, 110, 40, "label")
 
-    mon = d.box(
-        "<b>Bedside monitors</b><br>40 beds, a reading per bed<br>every 15 simulated minutes<br>"
-        "Python, metrics :8101",
-        20,
-        60,
-        200,
-        85,
-    )
-    adm = d.box("<b>Admissions producer</b><br>bed, age, condition,<br>COPD flag", 20, 170, 200, 70)
-    lab = d.box(
-        "<b>Lab uploader</b><br>one JSON file per simulated<br>day at 06:00 (metrics :8102)",
-        20,
-        265,
-        200,
-        70,
-    )
-    ingest = d.box(
-        "<b>Airflow: ward_lab_ingest</b><br>checksum, validate,<br>quarantine or publish",
-        20,
-        370,
-        200,
-        75,
-        "orch",
-    )
+    adm = d.box("<b>Admissions</b><br>bed, COPD flag", 130, 10, 220, 50)
+    mon = d.box("<b>Bedside monitors</b><br>40 beds", 380, 10, 220, 50)
+    lab = d.box("<b>Lab uploader</b><br>one file per sim day", 630, 10, 220, 50)
+    ingest = d.box("<b>Airflow</b><br>ward_lab_ingest", 630, 95, 220, 45, "orch")
 
-    grp = d.box("Apache Kafka (KRaft)  :9192", 260, 55, 290, 345, "group_stream")
-    topics = {}
-    for i, (name, info) in enumerate(
-        [
-            ("vitals.readings.v1", "6 partitions, delete after 30 sim days"),
-            ("ward.admissions.v1", "3 partitions, compact"),
-            ("labs.results.v1", "3 partitions, compact"),
-            ("vitals.alerts.v1", "3 partitions, delete"),
-            ("vitals.readings.dlq", "1 partition, delete"),
-            ("vitals.late", "1 partition, delete"),
-        ]
-    ):
-        topics[name] = d.box(
-            f"<b>{name}</b><br>{info}", 12, 32 + i * 51, 266, 44, "topic", parent=grp
-        )
-    d.box("<b>Schema Registry</b> (Avro contracts)  :8181", 260, 415, 290, 32, "stream")
+    d.box("Apache Kafka :9192", 120, 170, 740, 120, "group")
+    t_adm = d.box("<b>ward.admissions.v1</b><br>compacted", 130, 215, 220, 55, "topic")
+    t_vit = d.box("<b>vitals.readings.v1</b><br>kept 30 sim days", 380, 215, 220, 55, "topic")
+    t_lab = d.box("<b>labs.results.v1</b><br>compacted", 630, 215, 220, 55, "topic")
 
-    v1 = d.box(
-        "<b>ward-stream</b>  (NEWS2 v1, live)<br>Spark Structured Streaming<br>"
-        "micro-batch every 5 s<br>check → 4 h window → NEWS2 → labs → alerts<br>"
-        "keeps admissions + labs in a cache<br>Spark UI :4140, metrics :8104",
-        760,
-        60,
-        270,
-        125,
-        "stream",
-    )
     v2 = d.box(
-        "<b>ward-stream-v2</b>  (NEWS2 v2, replay)<br>the SAME code, started by<br>"
-        "<i>make replay</i> from offset 0<br>Spark UI :4141, metrics :8105",
-        760,
-        215,
-        270,
-        95,
+        "<b>ward-stream-v2</b> (NEWS2 v2)<br>same code, replays<br>from offset 0",
+        130,
+        365,
+        340,
+        75,
         "stream",
         "dashed=1;",
+    )
+    v1 = d.box(
+        "<b>ward-stream</b> (NEWS2 v1, live)<br>Spark, every 5 s: check,<br>NEWS2, labs, alerts",
+        510,
+        365,
+        340,
+        75,
+        "stream",
     )
     cass = d.box(
-        "<b>Apache Cassandra 4.1</b>  :9142<br><br>vitals_by_patient<br>risk_scores_by_patient<br>"
-        "ward_risk_snapshot (TTL 120 s)<br>alerts_by_ward (TTL 3 h)<br>labs_by_patient<br>"
-        "daily_patient_summary<br>sim_state<br><br>"
-        "<i>every score row carries its scorer_version</i>",
-        1090,
+        "<b>Apache Cassandra</b> :9142<br>"
+        "vitals, scores, ward snapshot, alerts, labs, daily summary",
+        130,
+        505,
+        720,
         60,
-        260,
-        250,
-        "store",
-        "align=left;spacingLeft=12;verticalAlign=top;spacingTop=8;",
-    )
-    api = d.box(
-        "<b>FastAPI</b>  :8100<br>ward list (worst first),<br>patient, alerts, labs,<br>"
-        "replay diff, cutover",
-        1390,
-        60,
-        220,
-        95,
         "store",
     )
-    pdf = d.box(
-        "<b>Daily PDF report</b><br>Airflow ward_daily_report<br>reads daily_patient_summary",
-        1390,
-        185,
-        220,
-        75,
-        "store",
-    )
-    graf = d.box(
-        "<b>Grafana</b>  :3100<br>ward monitor, pipeline health,<br>replay v1 vs v2",
-        1390,
-        290,
-        220,
-        70,
-        "obs",
-    )
-    d.box(
-        "<b>Apache Airflow</b>  :8182  (orchestration only, no scoring)<br>"
-        "ward_lab_ingest · ward_daily_report · ward_replay · ward_healthcheck · ward_retention",
-        760,
-        345,
-        580,
-        55,
-        "orch",
-    )
-    obs = d.box(
-        "<b>Observability</b>:  Prometheus :9190 scrapes every service's /metrics  ·  "
-        "Alertmanager :9193 routes safety alerts to the ward  ·  Pushgateway :9191  ·  "
-        "kafka-exporter :9309",
-        760,
-        420,
-        860,
-        40,
-        "obs",
-    )
+    api = d.box("<b>FastAPI</b> :8100<br>ward list, patient, cutover", 130, 625, 220, 60, "store")
+    pdf = d.box("<b>Daily PDF report</b><br>made by Airflow", 380, 625, 220, 60, "store")
+    graf = d.box("<b>Grafana</b> :3100<br>three dashboards", 630, 625, 220, 60, "obs")
 
-    # Kafka topic boxes are children of the group; absolute y of topic k is
-    # 55 + 32 + 51k, centre +22. Waypoints below are in absolute coordinates.
-    d.edge(mon, topics["vitals.readings.v1"], "", exit=(1, 0.5), entry=(0, 0.5))
-    d.edge(
-        adm,
-        topics["ward.admissions.v1"],
-        "",
-        exit=(1, 0.5),
-        entry=(0, 0.5),
-        points=[(236, 205), (236, 160)],
+    reg = d.box("<b>Schema Registry</b><br>:8181, Avro", 890, 215, 200, 55, "stream")
+    out = d.box(
+        "<b>Kafka outputs</b><br>vitals.alerts.v1<br>vitals.readings.dlq<br>vitals.late",
+        890,
+        360,
+        200,
+        85,
+        "stream",
     )
-    d.edge(lab, ingest, "file", exit=(0.5, 1), entry=(0.5, 0))
-    d.edge(
-        ingest,
-        topics["labs.results.v1"],
-        "publish",
-        exit=(1, 0.3),
-        entry=(0, 0.5),
-        points=[(248, 392), (248, 211)],
-    )
-    d.edge(topics["vitals.readings.v1"], v1, "live", exit=(1, 0.3), entry=(0, 0.3))
-    d.edge(
-        topics["vitals.readings.v1"],
-        v2,
-        "",
-        "dashed=1;",
-        exit=(1, 0.75),
-        entry=(0, 0.5),
-        points=[(600, 120), (600, 277)],
-    )
-    d.edge(
-        v1,
-        topics["vitals.alerts.v1"],
-        "",
-        exit=(0, 0.92),
-        entry=(1, 0.5),
-        points=[(645, 175), (645, 257)],
-    )
-    d.box("replay from offset 0", 606, 280, 150, 18, "note", "fontSize=11;")
-    d.box("alerts, dead letters,<br>late readings", 650, 140, 110, 32, "note", "fontSize=11;")
-    d.edge(v1, cass, "5 tables", exit=(1, 0.5), entry=(0, 0.25))
-    d.edge(v2, cass, "v2 rows", "dashed=1;", exit=(1, 0.5), entry=(0, 0.8))
-    d.edge(cass, api, "", exit=(1, 0.2), entry=(0, 0.5))
-    d.edge(cass, pdf, "", exit=(1, 0.55), entry=(0, 0.5))
-    d.edge(obs, graf, "", "dashed=1;", exit=(0.9, 0), entry=(0.5, 1))
-    d.legend(20, 480)
+    d.box("<b>Airflow</b> :8182<br>5 workflows,<br>no scoring", 890, 500, 200, 70, "orch")
+    prom = d.box("<b>Prometheus</b> :9190<br>Alertmanager :9193", 890, 625, 200, 60, "obs")
+
+    d.down(adm, t_adm)
+    d.down(mon, t_vit)
+    d.down(lab, ingest)
+    d.down(ingest, t_lab)
+    d.edge(t_vit, v2, "replay", "dashed=1;", exit=(0.25, 1), entry=(0.9, 0))
+    d.edge(t_vit, v1, "live", exit=(0.75, 1), entry=(0.1, 0))
+    d.edge(v1, out, exit=(1, 0.5), entry=(0, 0.5))
+    d.edge(reg, t_lab, "", "dashed=1;", exit=(0, 0.5), entry=(1, 0.5))
+    d.edge(v2, cass, "v2 rows", "dashed=1;", exit=(0.5, 1), entry=(0.25, 0))
+    d.edge(v1, cass, "v1 rows", exit=(0.5, 1), entry=(0.75, 0))
+    d.edge(cass, api, exit=(110 / 720, 1), entry=(0.5, 0))
+    d.edge(cass, pdf, exit=(0.5, 1), entry=(0.5, 0))
+    d.edge(prom, graf, exit=(0, 0.5), entry=(1, 0.5))
+
+    for i, (kind, text) in enumerate(
+        [
+            ("stream", "Streaming"),
+            ("store", "Storage, serving"),
+            ("orch", "Orchestration"),
+            ("obs", "Observability"),
+            ("ext", "Outside"),
+        ]
+    ):
+        d.box(text, 130 + i * 190, 720, 170, 30, kind)
     return d
 
 
 def d3_sequence() -> Diagram:
     d = Diagram("D3-event-sequence")
-    names = [
-        "Bedside monitor",
-        "Pathology lab<br>+ Airflow",
-        "Kafka",
-        "ward-stream<br>(Spark)",
-        "Cassandra",
-        "FastAPI /<br>Grafana",
-        "Ward nurse",
-    ]
-    kinds = ["ext", "orch", "stream", "stream", "store", "store", "ext"]
-    xs = [80 + i * 175 for i in range(len(names))]
-    top, bottom = 20, 640
-    for x, name, kind in zip(xs, names, kinds, strict=True):
-        d.box(f"<b>{name}</b>", x - 70, top, 140, 48, kind)
-        d.line(x, top + 48, x, bottom, style=STYLE["lifeline"])
-
-    def msg(a: int, b: int, y: float, text: str, dashed: bool = False) -> None:
-        d.line(xs[a], y, xs[b], y, text, extra="dashed=1;" if dashed else "")
-
-    msg(1, 2, 105, "day 2, 06:00: P014's labs<br>lactate 3.8, WBC 18.4")
-    msg(2, 3, 150, "labs kept in the join cache")
-    msg(0, 2, 205, "reading for P014 (Avro, key P014)<br>every 15 simulated minutes")
-    msg(2, 3, 250, "micro-batch every 5 real seconds")
-    d.box(
-        "1. reject impossible values (to DLQ)<br>2. update the 4-hour window<br>"
-        "3. NEWS2 (ward/clinical/news2.py)<br>4. add labs reported before now<br>"
-        "5. open or escalate an alert episode",
-        xs[3] - 10,
-        270,
-        235,
-        95,
+    lab = d.box("<b>Day 2, 06:00</b><br>lab file: P014 lactate 3.8", 0, 0, 300, 50)
+    pub = d.box("<b>Airflow</b> publishes<br>to labs.results.v1", 0, 100, 300, 50, "orch")
+    mon = d.box("<b>Monitor</b> sends a P014<br>reading every 15 sim min", 400, 0, 300, 50)
+    kaf = d.box("<b>Kafka</b><br>vitals.readings.v1", 400, 100, 300, 50, "stream")
+    spark = d.box(
+        "<b>Spark stream</b>, every 5 s<br>check, window, NEWS2,<br>add labs, alert episode",
+        175,
+        210,
+        350,
+        75,
         "stream",
-        "align=left;spacingLeft=6;fontSize=11;",
     )
-    msg(3, 4, 390, "vitals, score, ward snapshot,<br>daily summary")
-    msg(3, 2, 435, "new episode only:<br>vitals.alerts.v1")
-    msg(3, 4, 470, "alerts_by_ward")
-    msg(6, 5, 520, "open the ward list")
-    msg(5, 4, 555, "one partition read (Q2)")
-    msg(4, 5, 590, "rows, newest per patient", dashed=True)
-    msg(5, 6, 625, "P014 at the top, NEWS2 7+", dashed=True)
-    d.box(
-        "<b>What the nurse would otherwise miss</b><br>P014's sepsis starts on simulated day 2 at "
-        "08:00. NEWS2 climbs through the urgent (5) and emergency (7) thresholds within a few "
-        "simulated hours; each threshold raises ONE alert, not one per reading.",
-        xs[5] + 60,
-        150,
-        230,
-        130,
-        "note",
+    cass = d.box("<b>Cassandra</b><br>score, snapshot, summary, alert", 175, 345, 350, 50, "store")
+    ward = d.box(
+        "<b>Ward list</b><br>P014 first, one alert per episode", 175, 455, 350, 50, "store"
     )
+    d.down(lab, pub)
+    d.down(mon, kaf)
+    d.edge(pub, spark, "labs", exit=(0.5, 1), entry=(0.2, 0))
+    d.edge(kaf, spark, "readings", exit=(0.5, 1), entry=(0.8, 0))
+    d.down(spark, cass)
+    d.down(cass, ward)
     return d
 
 
 def d4_replay() -> Diagram:
     d = Diagram("D4-replay-branching")
-    log = d.box(
-        "<b>vitals.readings.v1</b>: every reading, kept for 30 simulated days   "
-        "(offset 0  ───────────────────────────────►  newest)",
-        40,
-        40,
-        900,
-        45,
-        "stream",
-    )
-    v1 = d.box(
-        "<b>ward-stream</b> (NEWS2 v1)<br>reads the newest readings, live",
-        640,
-        130,
-        300,
-        60,
-        "stream",
-    )
+    log = d.box("<b>vitals.readings.v1</b><br>all readings, 30 sim days", 150, 0, 400, 50, "stream")
     v2 = d.box(
-        "<b>ward-stream-v2</b> (NEWS2 v2: Scale 2 for COPD)<br>same code, starts at offset 0, "
-        "catches up,<br>then runs live beside v1",
-        40,
-        130,
-        360,
-        70,
-        "stream",
-        "dashed=1;",
+        "<b>ward-stream-v2</b> (v2)<br>starts at offset 0", 0, 110, 300, 50, "stream", "dashed=1;"
     )
-    d.edge(log, v1, "live", "exitX=0.85;exitY=1;entryX=0.5;entryY=0;")
-    d.edge(log, v2, "replay", "exitX=0.1;exitY=1;entryX=0.3;entryY=0;dashed=1;")
-    cass = d.box(
-        "<b>Cassandra</b>: v1 rows and v2 rows side by side<br>"
-        "(scorer_version is part of every score key, so nothing is overwritten)",
-        240,
-        240,
-        500,
-        55,
+    v1 = d.box("<b>ward-stream</b> (v1)<br>live", 400, 110, 300, 50, "stream")
+    d.edge(log, v2, "replay", "dashed=1;", exit=(0.2, 1), entry=(0.5, 0))
+    d.edge(log, v1, "live", exit=(0.8, 1), entry=(0.5, 0))
+    cass = d.box("<b>Cassandra</b><br>v1 and v2 rows side by side", 150, 220, 400, 50, "store")
+    d.edge(v2, cass, "", "dashed=1;", exit=(0.5, 1), entry=(0.2, 0))
+    d.edge(v1, cass, exit=(0.5, 1), entry=(0.8, 0))
+    diff = d.box("<b>Compare</b><br>NEWS2 v1 vs v2, per reading", 150, 330, 400, 50, "orch")
+    d.down(cass, diff)
+    check = d.box("Only COPD patients<br>changed, as expected?", 225, 440, 250, 110, "decision")
+    d.down(diff, check)
+    stop = d.box("Stop and<br>investigate", 540, 470, 160, 50)
+    d.edge(check, stop, "no", exit=(1, 0.5), entry=(0, 0.5))
+    approve = d.box("<b>Clinician approves</b>", 150, 610, 400, 40, "orch")
+    d.edge(check, approve, "yes", exit=(0.5, 1), entry=(0.5, 0))
+    cut = d.box(
+        "<b>Cutover</b>: API serves v2<br>rollback: the same call with v1",
+        150,
+        710,
+        400,
+        50,
         "store",
     )
-    d.edge(v1, cass)
-    d.edge(v2, cass, "", "dashed=1;")
-    diff = d.box(
-        "<b>compare_versions</b><br>every reading scored by both,<br>NEWS2 v1 vs v2",
-        40,
-        340,
-        240,
-        70,
-        "orch",
-    )
-    d.edge(cass, diff)
-    check = d.box(
-        "only COPD patients<br>changed, in the<br>expected direction?", 340, 325, 170, 100, "decision"
-    )
-    d.edge(diff, check)
-    stop = d.box("stop: the new rule<br>does something<br>unexpected", 360, 470, 130, 70, "ext")
-    d.edge(check, stop, "no")
-    approve = d.box(
-        "<b>clinician approves</b><br>(the Airflow run stops<br>here and waits)",
-        570,
-        340,
-        170,
-        70,
-        "orch",
-    )
-    d.edge(check, approve, "yes")
-    cut = d.box(
-        "<b>cutover</b>: the API serves v2<br>(make cutover VERSION=v2)", 800, 340, 200, 70, "store"
-    )
-    d.edge(approve, cut)
-    d.box(
-        "<b>Rollback</b> is the same switch back to v1: the v1 rows were never touched.",
-        800,
-        430,
-        200,
-        60,
-        "note",
-    )
-    d.legend(1060, 40)
+    d.down(approve, cut)
     return d
 
 
 def d5_tables() -> Diagram:
     d = Diagram("D5-cassandra-tables")
     tables = [
-        (
-            "vitals_by_patient",
-            "patient_id",
-            "measured_at DESC",
-            "",
-            "Q1: a patient's recent readings",
-        ),
+        ("vitals_by_patient", "patient_id", "measured_at, newest first", "", "recent readings"),
         (
             "ward_risk_snapshot",
             "ward_id, scorer_version",
-            "risk_score DESC, patient_id",
+            "risk_score, highest first",
             "TTL 120 s",
-            "Q2: the ward list, worst first",
+            "ward list, sickest first",
         ),
         (
             "risk_scores_by_patient",
             "patient_id, scorer_version",
-            "scored_at DESC",
+            "scored_at, newest first",
             "",
-            "Q3: a patient's score history,<br>per rule version",
+            "score history per version",
         ),
         (
             "alerts_by_ward",
             "ward_id, sim_date, scorer_version",
-            "alert_time DESC, alert_id",
+            "alert_time, newest first",
             "TTL 3 h",
-            "Q4: today's alerts on the ward",
+            "today's alerts",
         ),
-        (
-            "labs_by_patient",
-            "patient_id",
-            "test_type, collected_at DESC",
-            "",
-            "Q5: a patient's lab results",
-        ),
+        ("labs_by_patient", "patient_id", "test_type, collected_at", "", "a patient's labs"),
         (
             "daily_patient_summary",
             "ward_id, sim_date",
             "patient_id, scorer_version",
             "",
-            "Q6: the daily PDF report",
+            "the daily report",
         ),
     ]
     for i, (name, pk, ck, ttl, serves) in enumerate(tables):
-        x = 30 + (i % 3) * 330
-        y = 30 + (i // 3) * 145
-        extra = f"<br>{ttl}" if ttl else ""
+        ttl_line = f"<br>{ttl}" if ttl else ""
         d.box(
-            f"<b>{name}</b><hr>partition key: <i>{pk}</i><br>clustering: <i>{ck}</i>{extra}"
-            f"<hr>{serves}",
-            x,
-            y,
-            300,
-            125,
+            f"<b>{name}</b><br>partition: {pk}<br>order: {ck}{ttl_line}<br>answers: {serves}",
+            (i % 2) * 380,
+            (i // 2) * 120,
+            350,
+            100,
             "store",
-            "align=left;spacingLeft=8;verticalAlign=top;",
+            "align=left;spacingLeft=10;",
         )
-    d.box(
-        "Each table is shaped for exactly one question, so every read touches one partition "
-        "and none needs ALLOW FILTERING. Rows that go stale expire by TTL instead of DELETE, "
-        "which would leave tombstones behind.",
-        30,
-        330,
-        960,
-        45,
-        "note",
-    )
+    d.box("One table per question: every read touches one partition.", 0, 360, 730, 30, "note")
     return d
 
 
 def d6_one_reading() -> Diagram:
     d = Diagram("D6-one-reading")
-    start = d.box("<b>a reading arrives</b><br>(Kafka record)", 40, 40, 160, 55, "stream")
+    start = d.box("<b>Reading arrives</b>", 30, 0, 180, 45, "stream")
     steps = [
-        ("can it be decoded?", "no", "vitals.readings.dlq<br>(UNDECODABLE)"),
-        ("seen this reading id<br>before?", "yes", "counted and<br>skipped (duplicate)"),
-        (
-            "physically impossible?<br>(e.g. SpO2 0, HR 300)",
-            "yes",
-            "vitals.readings.dlq<br>with raw bytes + offset",
-        ),
-        (
-            "more than 60 sim min<br>behind this patient?",
-            "yes",
-            "vitals.late<br>+ stored, not scored",
-        ),
+        ("Can it be<br>decoded?", "no", "Dead-letter topic"),
+        ("Seen this<br>id before?", "yes", "Skip (duplicate)"),
+        ("Physically<br>impossible?", "yes", "Dead-letter topic,<br>with original bytes"),
+        ("Over 60 sim min<br>behind?", "yes", "Late topic,<br>stored, not scored"),
     ]
+    flip = {"": "", "yes": "no", "no": "yes"}
     prev, prev_answer = start, ""
-    y = 130
+    y = 90
     for question, answer, outcome in steps:
-        q = d.box(question, 30, y, 180, 90, "decision", "fontSize=11;")
-        # The way DOWN from the previous question is the opposite of its side exit.
-        d.edge(prev, q, {"": "", "yes": "no", "no": "yes"}[prev_answer])
-        out = d.box(outcome, 290, y + 18, 190, 55, "ext", "fontSize=11;")
-        d.edge(q, out, answer)
+        q = d.box(question, 20, y, 200, 100, "decision")
+        d.edge(prev, q, flip[prev_answer], exit=(0.5, 1), entry=(0.5, 0))
+        out = d.box(outcome, 300, y + 25, 200, 50)
+        d.edge(q, out, answer, exit=(1, 0.5), entry=(0, 0.5))
         prev, prev_answer = q, answer
-        y += 125
-    score = d.box(
-        "<b>score it</b><br>4-hour window and trend (Theil-Sen)<br>NEWS2 v1 or v2<br>"
-        "+ labs reported before this reading<br>alert only if a new episode",
-        20,
-        y,
-        200,
-        100,
-        "stream",
-    )
-    d.edge(prev, score, {"yes": "no", "no": "yes"}[prev_answer])
-    store = d.box("<b>Cassandra</b><br>5 tables", 290, y + 20, 190, 60, "store")
-    d.edge(score, store)
-    d.box(
-        "Impossible is not the same as abnormal. SpO2 88 % is a sick patient and must be "
-        "scored; SpO2 0 % is a probe that fell off. The checks use physical limits, never "
-        "statistical outliers, because the readings that matter most are the ones furthest "
-        "from normal.",
-        520,
-        150,
-        260,
-        150,
-        "note",
-    )
+        y += 140
+    score = d.box("<b>Score it</b><br>window, NEWS2, labs, alerts", 0, y, 240, 60, "stream")
+    d.edge(prev, score, flip[prev_answer], exit=(0.5, 1), entry=(0.5, 0))
+    store = d.box("<b>Cassandra</b>", 0, y + 110, 240, 45, "store")
+    d.down(score, store)
     return d
 
 
