@@ -7,7 +7,7 @@
 \usepackage{float}
 \usepackage{setspace}
 \usepackage{titlesec}
-\usepackage{xcolor}
+\usepackage[table]{xcolor}
 \usepackage{caption}
 \usepackage{enumitem}
 \usepackage[T1]{fontenc}
@@ -19,6 +19,7 @@
 \definecolor{linknavy}{HTML}{16447A}
 \definecolor{rulegrey}{HTML}{5A6672}
 \definecolor{callbg}{HTML}{F4F6F8}
+\definecolor{tablehead}{HTML}{E4E9EF}
 
 \setstretch{1.05}
 \setlist{nosep,leftmargin=1.4em}
@@ -28,7 +29,7 @@
 \titlespacing*{\subsection}{0pt}{8pt}{3pt}
 \captionsetup{font=small,labelfont=bf,skip=4pt}
 \setlength{\textfloatsep}{10pt}\setlength{\intextsep}{10pt}
-\renewcommand{\arraystretch}{1.18}
+\renewcommand{\arraystretch}{1.25}
 \setlength{\parskip}{3pt}
 
 \newcommand{\callout}[2]{%
@@ -142,24 +143,22 @@ Table~\ref{tab:req} turns the use case into concrete requirements and shows wher
 one is met.
 
 \begin{table}[H]\centering\small
-\begin{tabularx}{\linewidth}{@{}lXX@{}}
-\toprule
-& \textbf{Requirement} & \textbf{How it is met} \\
-\midrule
+\begin{tabularx}{\linewidth}{|l|X|X|}
+\hline
+\rowcolor{tablehead}& \textbf{Requirement} & \textbf{How it is met} \\ \hline
 R1 & See a worsening patient within seconds, not at the end of the day &
-One stream scores every reading. Measured end-to-end time: \mLatencyPfifty{} s median. \\
+One stream scores every reading. Measured end-to-end time: \mLatencyPfifty{} s median. \\ \hline
 R2 & Combine the daily lab file with the live vitals & Labs are published to a Kafka
-topic and joined to each reading as it is scored. \\
+topic and joined to each reading as it is scored. \\ \hline
 R3 & Never lose a reading, and never score an impossible one & Impossible readings go
-to a dead-letter topic with their original bytes; late ones go to a late topic. \\
-R4 & One alert per problem, not one per reading & Alerts are grouped into episodes. \\
+to a dead-letter topic with their original bytes; late ones go to a late topic. \\ \hline
+R4 & One alert per problem, not one per reading & Alerts are grouped into episodes. \\ \hline
 R5 & Be able to change the scoring rule and re-score the past & Kafka keeps 30
-simulated days; a second copy of the stream re-reads them with the new rule. \\
+simulated days; a second copy of the stream re-reads them with the new rule. \\ \hline
 R6 & A daily report and a live dashboard & Airflow renders a PDF each simulated day;
-Grafana and a REST API show the ward live. \\
+Grafana and a REST API show the ward live. \\ \hline
 R7 & Notice when the system itself stops & Prometheus alert
-\texttt{WardMonitoringSilent}, and an Airflow health check. \\
-\bottomrule
+\texttt{WardMonitoringSilent}, and an Airflow health check. \\ \hline
 \end{tabularx}
 \caption{Requirements taken from the use case.}\label{tab:req}
 \end{table}
@@ -233,15 +232,15 @@ logic.
 % =====================================================================
 
 Figure~\ref{fig:d1} shows who uses the system. Figure~\ref{fig:d2} shows every
-service, the port it uses, and how data moves from left to right.
+service, the port it uses, and how data moves from top to bottom.
 
 \begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/D1-context.pdf}
+\includegraphics[width=0.8\linewidth]{figures/D1-context.pdf}
 \caption{System context: two data sources in, four kinds of user out.}\label{fig:d1}
 \end{figure}
 
 \begin{figure}[H]\centering
-\includegraphics[width=\linewidth]{figures/D2-layered-architecture.pdf}
+\includegraphics[width=1.0\linewidth]{figures/D2-layered-architecture.pdf}
 \caption{Layered architecture. Blue is streaming, orange is storage and serving, green
 is orchestration, grey is observability. Every service runs in Docker Compose.}
 \label{fig:d2}
@@ -256,17 +255,15 @@ kept forever. Every message is Avro, checked against a schema in the Schema Regi
 and keyed by patient, so one patient's readings always arrive in order.
 
 \begin{table}[H]\centering\small
-\begin{tabularx}{\linewidth}{@{}lllX@{}}
-\toprule
-\textbf{Topic} & \textbf{Partitions} & \textbf{Cleanup} & \textbf{What it holds} \\
-\midrule
-vitals.readings.v1 & 6 & delete after 30 sim days & every bedside reading \\
-labs.results.v1 & 3 & compact & newest result per patient and test \\
-ward.admissions.v1 & 3 & compact & bed, age, condition, COPD flag \\
-vitals.alerts.v1 & 3 & delete & new alert episodes \\
-vitals.readings.dlq & 1 & delete & impossible readings, with original bytes \\
-vitals.late & 1 & delete & readings that arrived too late for their window \\
-\bottomrule
+\begin{tabularx}{\linewidth}{|l|l|l|X|}
+\hline
+\rowcolor{tablehead}\textbf{Topic} & \textbf{Partitions} & \textbf{Cleanup} & \textbf{What it holds} \\ \hline
+vitals.readings.v1 & 6 & delete after 30 sim days & every bedside reading \\ \hline
+labs.results.v1 & 3 & compact & newest result per patient and test \\ \hline
+ward.admissions.v1 & 3 & compact & bed, age, condition, COPD flag \\ \hline
+vitals.alerts.v1 & 3 & delete & new alert episodes \\ \hline
+vitals.readings.dlq & 1 & delete & impossible readings, with original bytes \\ \hline
+vitals.late & 1 & delete & readings that arrived too late for their window \\ \hline
 \end{tabularx}
 \caption{Kafka topics (measured with \texttt{make topics}).}\label{tab:topics}
 \end{table}
@@ -281,7 +278,7 @@ The stream is a Spark Structured Streaming job. Every 5 real seconds it takes th
 readings from Kafka and handles each one as shown in Figure~\ref{fig:d6}.
 
 \begin{figure}[H]\centering
-\includegraphics[width=0.78\linewidth]{figures/D6-one-reading.pdf}
+\includegraphics[width=0.45\linewidth]{figures/D6-one-reading.pdf}
 \caption{What happens to one reading.}\label{fig:d6}
 \end{figure}
 
@@ -313,7 +310,7 @@ The steps are:
 Figure~\ref{fig:d3} follows patient P014 through these steps.
 
 \begin{figure}[H]\centering
-\includegraphics[width=\linewidth]{figures/D3-event-sequence.pdf}
+\includegraphics[width=0.62\linewidth]{figures/D3-event-sequence.pdf}
 \caption{Event sequence for patient P014 on simulated day 2.}\label{fig:d3}
 \end{figure}
 
@@ -334,7 +331,7 @@ answer, so every read goes to exactly one partition and no query needs
 \end{itemize}
 
 \begin{figure}[H]\centering
-\includegraphics[width=0.95\linewidth]{figures/D5-cassandra-tables.pdf}
+\includegraphics[width=0.72\linewidth]{figures/D5-cassandra-tables.pdf}
 \caption{Cassandra tables and the query each one serves.}\label{fig:d5}
 \end{figure}
 
@@ -346,16 +343,14 @@ workflows (Table~\ref{tab:dags}). Airflow only starts, checks and waits for thin
 never calculates a score. A test fails if a workflow imports a data-processing library.
 
 \begin{table}[H]\centering\small
-\begin{tabularx}{\linewidth}{@{}llX@{}}
-\toprule
-\textbf{Workflow} & \textbf{Runs} & \textbf{What it does} \\
-\midrule
-ward\_lab\_ingest & every 5 min (1 sim day) & checksum, validate, quarantine or publish the lab file \\
-ward\_daily\_report & every 5 min & wait for yesterday's summaries, render the PDF report \\
-ward\_healthcheck & every 2 min & fail if readings stop, the ward list is short, or the stream stalls \\
-ward\_retention & hourly & check the time-to-live settings and that the snapshot stays small \\
-ward\_replay & on demand & wait for the replay, compare versions, stop for human approval \\
-\bottomrule
+\begin{tabularx}{\linewidth}{|l|l|X|}
+\hline
+\rowcolor{tablehead}\textbf{Workflow} & \textbf{Runs} & \textbf{What it does} \\ \hline
+ward\_lab\_ingest & every 5 min (1 sim day) & checksum, validate, quarantine or publish the lab file \\ \hline
+ward\_daily\_report & every 5 min & wait for yesterday's summaries, render the PDF report \\ \hline
+ward\_healthcheck & every 2 min & fail if readings stop, the ward list is short, or the stream stalls \\ \hline
+ward\_retention & hourly & check the time-to-live settings and that the snapshot stays small \\ \hline
+ward\_replay & on demand & wait for the replay, compare versions, stop for human approval \\ \hline
 \end{tabularx}
 \caption{Airflow workflows.}\label{tab:dags}
 \end{table}
@@ -365,27 +360,25 @@ ward\_replay & on demand & wait for the replay, compare versions, stop for human
 % =====================================================================
 
 \begin{table}[H]\centering\small
-\begin{tabularx}{\linewidth}{@{}lXX@{}}
-\toprule
-\textbf{Tool} & \textbf{Why it fits this use case} & \textbf{Alternative we considered} \\
-\midrule
+\begin{tabularx}{\linewidth}{|l|X|X|}
+\hline
+\rowcolor{tablehead}\textbf{Tool} & \textbf{Why it fits this use case} & \textbf{Alternative we considered} \\ \hline
 Apache Kafka (KRaft) & Keeps the history for replay; partitions by patient keep
 each patient's readings in order; compaction suits the labs and admissions. &
-RabbitMQ: deletes messages once read, so no replay. \\
+RabbitMQ: deletes messages once read, so no replay. \\ \hline
 Schema Registry, Avro & A reading that does not match the contract is rejected at the
-door, not deep inside the stream. & JSON without a schema. \\
+door, not deep inside the stream. & JSON without a schema. \\ \hline
 Spark Structured Streaming & Required by the brief. Micro-batches every 5 s are far
 faster than the 15-minute reading interval. & Apache Flink: lower latency we do not
-need. \\
+need. \\ \hline
 Apache Cassandra & Writes are cheap; the ward list is one partition read; time to
 live empties the screen if the stream stops. & PostgreSQL: fine at this size, but
-sorting and expiry would need extra work. \\
-FastAPI & Typed responses and an automatic documentation page. & Flask. \\
+sorting and expiry would need extra work. \\ \hline
+FastAPI & Typed responses and an automatic documentation page. & Flask. \\ \hline
 Apache Airflow & Required by the brief. Good at ``wait, check, branch, retry'' for
-daily files. & cron: no retries, no history. \\
+daily files. & cron: no retries, no history. \\ \hline
 Prometheus, Alertmanager, Grafana & Pull-based metrics, alert rules as code, and
-routing of patient-safety alerts separately from engineering alerts. & Logs only. \\
-\bottomrule
+routing of patient-safety alerts separately from engineering alerts. & Logs only. \\ \hline
 \end{tabularx}
 \caption{Technology choices.}\label{tab:tech}
 \end{table}
@@ -406,7 +399,7 @@ exactly that case, so the check now allows it and fails on anything else.
 Figure~\ref{fig:d4} shows the steps.
 
 \begin{figure}[H]\centering
-\includegraphics[width=0.92\linewidth]{figures/D4-replay-branching.pdf}
+\includegraphics[width=0.58\linewidth]{figures/D4-replay-branching.pdf}
 \caption{Replay and cutover.}\label{fig:d4}
 \end{figure}
 
@@ -415,19 +408,19 @@ code as the live stream, with three settings changed: the rule version, the star
 position (the beginning of the log) and its own checkpoint. We measured:
 
 \begin{table}[H]\centering\small
-\begin{tabular}{@{}lr@{}}
-\toprule
-Readings in the log at the start of the replay & \mReplayEvents{} \\
-Time for the v2 stream to catch up (real seconds) & \mReplaySeconds{} \\
-Readings scored by both versions & \mReplayCompared{} \\
-Readings whose NEWS2 changed & \mReplayChanged{} \\
-\quad of which COPD patients & \mReplayCopdChanged{} \\
-\quad of which other patients (must be 0) & \mReplayControlChanged{} \\
-Changes that went up (COPD, on oxygen at 93\,\% or more) & \mReplayUpward{} \\
-\quad of which not explained by that (must be 0) & \mReplayUnexplained{} \\
-Readings that drop below NEWS2 5 under v2 & \mReplayBelowFive{} \\
-P031: emergency (NEWS2 7 or more) alerts under v1 and v2 & \mReplayPthirtyoneAlerts{} \\
-\bottomrule
+\begin{tabular}{|l|r|}
+\hline
+\rowcolor{tablehead}\textbf{Measurement} & \textbf{Result} \\ \hline
+Readings in the log at the start of the replay & \mReplayEvents{} \\ \hline
+Time for the v2 stream to catch up (real seconds) & \mReplaySeconds{} \\ \hline
+Readings scored by both versions & \mReplayCompared{} \\ \hline
+Readings whose NEWS2 changed & \mReplayChanged{} \\ \hline
+\quad of which COPD patients & \mReplayCopdChanged{} \\ \hline
+\quad of which other patients (must be 0) & \mReplayControlChanged{} \\ \hline
+Changes that went up (COPD, on oxygen at 93\,\% or more) & \mReplayUpward{} \\ \hline
+\quad of which not explained by that (must be 0) & \mReplayUnexplained{} \\ \hline
+Readings that drop below NEWS2 5 under v2 & \mReplayBelowFive{} \\ \hline
+P031: emergency (NEWS2 7 or more) alerts under v1 and v2 & \mReplayPthirtyoneAlerts{} \\ \hline
 \end{tabular}
 \caption{Replay results, from \texttt{make diff}.}\label{tab:replay}
 \end{table}
@@ -451,25 +444,23 @@ A monitoring system that fails silently is dangerous: an empty alert list looks 
 like a calm ward. So we measure the pipeline as carefully as the patients.
 
 \begin{table}[H]\centering\small
-\begin{tabularx}{\linewidth}{@{}p{3.2cm}XX@{}}
-\toprule
-\textbf{What} & \textbf{How} & \textbf{Why} \\
-\midrule
+\begin{tabularx}{\linewidth}{|p{3.2cm}|X|X|}
+\hline
+\rowcolor{tablehead}\textbf{What} & \textbf{How} & \textbf{Why} \\ \hline
 Structured logs & JSON lines from every service, each with \texttt{service} and
 \texttt{stage} (ingest, process, store, serve, orchestrate). & One query finds every
-log line for one stage across all containers. \\
+log line for one stage across all containers. \\ \hline
 Readings in, scores out & Counters \texttt{readings\_produced\_total},
 \texttt{risk\_scores\_written\_total}. & If scores stop while readings continue, the
-stream is dead. \\
+stream is dead. \\ \hline
 End-to-end time & Histogram from the monitor's timestamp to the Cassandra write. &
-This is what a nurse waits for. \\
+This is what a nurse waits for. \\ \hline
 Micro-batch progress & A Spark query listener records batch time, rows and last
-progress. & Tells a stalled query from an idle one. \\
+progress. & Tells a stalled query from an idle one. \\ \hline
 Injected vs dead-lettered & Counters by fault type on both sides. & The injector is a
-control: what goes in must come out. \\
+control: what goes in must come out. \\ \hline
 Replay progress & Per-partition offsets of the replay stream. & Spark does not use
-consumer groups, so consumer lag cannot measure it. \\
-\bottomrule
+consumer groups, so consumer lag cannot measure it. \\ \hline
 \end{tabularx}
 \caption{What is measured, how, and why.}\label{tab:obs}
 \end{table}
@@ -504,23 +495,21 @@ it. Table~\ref{tab:results} gives the numbers; the screenshots below and in
 Appendix~\ref{app:shots} are from that run.
 
 \begin{table}[H]\centering\small
-\begin{tabularx}{\linewidth}{@{}Xr@{}}
-\toprule
-\textbf{Measurement} & \textbf{Result} \\
-\midrule
-Readings delivered to Kafka per second (expected about 12.8) & \mThroughput{} \\
-Distinct patient keys on the vitals topic (expected 40) & \mKeys{} \\
-Impossible readings injected (snapshot) & \mInjected{} \\
-Of those, found in the dead-letter topic (Table~\ref{tab:dlq}) & \mDeadLettered{} \\
-End-to-end time, median and 95th percentile (real seconds) & \mLatencyPfifty{} / \mLatencyPninetyfive{} \\
-Micro-batch duration, typical (real seconds) & \mBatchSeconds{} \\
-P014: first NEWS2 7+ alert after sepsis onset (simulated time) & \mPfourteenDelay{} \\
-P014: NEWS2 7+ alerts raised in that episode (expected 1) & \mPfourteenHighAlerts{} \\
-P007: alerts within 2 simulated hours of the spike (expected 0) & \mPsevenAlerts{} \\
-API ward list response time, median & \mApiMs{} ms \\
-Memory used by the whole stack & \mMemory{} \\
-Automated tests passing & \mTests{} \\
-\bottomrule
+\begin{tabularx}{\linewidth}{|X|r|}
+\hline
+\rowcolor{tablehead}\textbf{Measurement} & \textbf{Result} \\ \hline
+Readings delivered to Kafka per second (expected about 12.8) & \mThroughput{} \\ \hline
+Distinct patient keys on the vitals topic (expected 40) & \mKeys{} \\ \hline
+Impossible readings injected (snapshot) & \mInjected{} \\ \hline
+Of those, found in the dead-letter topic (Table~\ref{tab:dlq}) & \mDeadLettered{} \\ \hline
+End-to-end time, median and 95th percentile (real seconds) & \mLatencyPfifty{} / \mLatencyPninetyfive{} \\ \hline
+Micro-batch duration, typical (real seconds) & \mBatchSeconds{} \\ \hline
+P014: first NEWS2 7+ alert after sepsis onset (simulated time) & \mPfourteenDelay{} \\ \hline
+P014: NEWS2 7+ alerts raised in that episode (expected 1) & \mPfourteenHighAlerts{} \\ \hline
+P007: alerts within 2 simulated hours of the spike (expected 0) & \mPsevenAlerts{} \\ \hline
+API ward list response time, median & \mApiMs{} ms \\ \hline
+Memory used by the whole stack & \mMemory{} \\ \hline
+Automated tests passing & \mTests{} \\ \hline
 \end{tabularx}
 \caption{Measured results.}\label{tab:results}
 \end{table}
@@ -533,19 +522,16 @@ check found 16 extra ``inverted blood pressure'' rejections: real P014 readings,
 impossible by a bug in the sepsis script. That bug was fixed before this run.)
 
 \begin{table}[H]\centering\small
-\begin{tabular}{@{}lrr@{}}
-\toprule
-\textbf{Reason} & \textbf{Injected} & \textbf{In the dead-letter topic 20 s later} \\
-\midrule
-SpO2 probe detached & 124 & 128 \\
-Heart rate out of range & 86 & 87 \\
-Empty reading & 75 & 78 \\
-Blood pressure inverted & 51 & 51 \\
-Temperature out of range & 50 & 51 \\
-Timestamp in the future & 20 & 20 \\
-\midrule
-Total & 406 & 415 \\
-\bottomrule
+\begin{tabular}{|l|r|r|}
+\hline
+\rowcolor{tablehead}\textbf{Reason} & \textbf{Injected} & \textbf{In the dead-letter topic 20 s later} \\ \hline
+SpO2 probe detached & 124 & 128 \\ \hline
+Heart rate out of range & 86 & 87 \\ \hline
+Empty reading & 75 & 78 \\ \hline
+Blood pressure inverted & 51 & 51 \\ \hline
+Temperature out of range & 50 & 51 \\ \hline
+Timestamp in the future & 20 & 20 \\ \hline
+Total & 406 & 415 \\ \hline
 \end{tabular}
 \caption{Injected faults against dead letters. The right column is slightly higher
 because the monitors kept injecting during the 20 seconds. Nine duplicate readings were
@@ -671,21 +657,19 @@ All three members took part in design discussions, testing and reviewing the rep
 The major parts each person built are:
 
 \begin{table}[H]\centering\small
-\begin{tabularx}{\linewidth}{@{}lX@{}}
-\toprule
-\textbf{Member} & \textbf{Major parts} \\
-\midrule
+\begin{tabularx}{\linewidth}{|l|X|}
+\hline
+\rowcolor{tablehead}\textbf{Member} & \textbf{Major parts} \\ \hline
 \authorA & The NEWS2 scoring rule and its tests; the physiology simulator and the three
 scripted patients; the Spark stream (checking, windows, scoring, lab join, alert
 episodes, dead-letter and late paths); the metrics and Prometheus alert rules; writing
-this report. \\
+this report. \\ \hline
 \authorB & The Docker Compose platform (Kafka, Schema Registry, topics); the Cassandra
 data model and data access code; the Airflow workflows; the FastAPI service; the replay
-stream and the version comparison; the Grafana dashboards; the architecture diagrams. \\
+stream and the version comparison; the Grafana dashboards; the architecture diagrams. \\ \hline
 \authorC & The architecture decision records; the daily PDF report; the test suites for
 the API, the replay and the observability configuration; the screenshots and the
-measurements used in this report. \\
-\bottomrule
+measurements used in this report. \\ \hline
 \end{tabularx}
 \end{table}
 
