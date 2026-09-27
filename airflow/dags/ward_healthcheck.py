@@ -21,13 +21,11 @@ or compute clinical risk; it acts as an independent watcher over the streaming s
 
 from __future__ import annotations
 
-import os
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import pendulum
 from airflow.decorators import dag, task
-from airflow.exceptions import AirflowFailException
 from airflow.utils.trigger_rule import TriggerRule
 
 DEFAULT_ARGS = {

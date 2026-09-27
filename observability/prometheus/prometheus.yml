@@ -5,29 +5,18 @@ global:
 rule_files:
   - "alerts.yml"
 
+# Targets use the ports INSIDE the compose network. The host-side ports (9193, 9191,
+# 9309, ...) only exist on the host; the first version of this file used them here
+# and three of the targets could never be reached.
 alerting:
   alertmanagers:
     - static_configs:
-        - targets:
-            - "alertmanager:9193"
+        - targets: ["alertmanager:9093"]
 
 scrape_configs:
-  - job_name: "ward-api"
+  - job_name: "prometheus"
     static_configs:
-      - targets: ["ward-api:8100"]
-
-  - job_name: "spark-pushgateway"
-    honor_labels: true
-    static_configs:
-      - targets: ["pushgateway:9191"]
-
-  - job_name: "kafka-exporter"
-    static_configs:
-      - targets: ["kafka-exporter:9309"]
-
-  - job_name: "statsd-exporter"
-    static_configs:
-      - targets: ["statsd-exporter:9202"]
+      - targets: ["localhost:9090"]
 
   - job_name: "bedside-monitor"
     static_configs:
@@ -36,3 +25,30 @@ scrape_configs:
   - job_name: "lab-uploader"
     static_configs:
       - targets: ["lab-uploader:8102"]
+
+  - job_name: "ward-stream"
+    static_configs:
+      - targets: ["ward-stream:8104"]
+
+  # Only up while a replay is running (`make replay`). A down target here is
+  # expected outside a replay, so no alert is attached to it.
+  - job_name: "ward-stream-v2"
+    static_configs:
+      - targets: ["ward-stream-v2:8105"]
+
+  - job_name: "ward-api"
+    static_configs:
+      - targets: ["ward-api:8100"]
+
+  - job_name: "kafka-exporter"
+    static_configs:
+      - targets: ["kafka-exporter:9308"]
+
+  - job_name: "pushgateway"
+    honor_labels: true
+    static_configs:
+      - targets: ["pushgateway:9091"]
+
+  - job_name: "alertmanager"
+    static_configs:
+      - targets: ["alertmanager:9093"]

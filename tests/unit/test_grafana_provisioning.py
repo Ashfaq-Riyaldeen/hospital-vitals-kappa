@@ -73,8 +73,8 @@ def test_dashboard_metric_queries_match_prometheus() -> None:
     # 1. Ward Monitor must query risk scores and clinical alerts
     wm = json.loads((dashboards_dir / "ward-monitor.json").read_text())
     wm_exprs = [t.get("expr", "") for p in wm["panels"] for t in p.get("targets", [])]
-    assert any("risk_scores_written_total" in e for e in wm_exprs)
-    assert any("readings_produced_total" in e for e in wm_exprs)
+    assert any("patient_composite_risk" in e for e in wm_exprs)
+    assert any("patient_news2" in e for e in wm_exprs)
 
     # 2. Pipeline Health must query silence alert and stage metrics
     ph = json.loads((dashboards_dir / "pipeline-health.json").read_text())
@@ -86,4 +86,7 @@ def test_dashboard_metric_queries_match_prometheus() -> None:
     rc = json.loads((dashboards_dir / "replay-comparison.json").read_text())
     rc_exprs = [t.get("expr", "") for p in rc["panels"] for t in p.get("targets", [])]
     assert any("replay_progress_pct" in e for e in rc_exprs)
-    assert any("kafka_consumergroup_lag" in e for e in rc_exprs)
+    # Structured Streaming commits no consumer-group offsets, so replay progress is
+    # read from the stream's own per-partition offsets, never from consumer lag.
+    assert any("stream_partition_offset" in e for e in rc_exprs)
+    assert not any("kafka_consumergroup_lag" in e for e in rc_exprs)

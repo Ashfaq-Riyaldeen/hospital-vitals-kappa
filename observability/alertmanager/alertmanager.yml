@@ -1,3 +1,11 @@
+# Two receivers, because alerts about PATIENT SAFETY and alerts about the PIPELINE
+# go to different people. WardMonitoringSilent is both: the pipeline is down, and
+# that means the ward screen is blind, so it goes to the ward as well as to ops.
+#
+# No webhook is configured. In a hospital these receivers would page the nurse in
+# charge and the on-call engineer; here the routing is shown in the Alertmanager UI.
+# (The first version pointed both at an `alert-sink` service that does not exist, so
+# every notification failed.)
 global:
   resolve_timeout: 5m
 
@@ -6,20 +14,12 @@ route:
   group_wait: 10s
   group_interval: 30s
   repeat_interval: 2h
-  receiver: "devops-sre"
+  receiver: "pipeline-oncall"
   routes:
-    - match:
-        category: clinical_safety
-      receiver: "ward-safety-pager"
+    - matchers: ['category="clinical_safety"']
+      receiver: "ward-safety"
       continue: true
 
 receivers:
-  - name: "devops-sre"
-    webhook_configs:
-      - url: "http://alert-sink:8103/pipeline-alerts"
-        send_resolved: true
-
-  - name: "ward-safety-pager"
-    webhook_configs:
-      - url: "http://alert-sink:8103/clinical-safety"
-        send_resolved: true
+  - name: "pipeline-oncall"
+  - name: "ward-safety"

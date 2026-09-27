@@ -1,12 +1,10 @@
 {
   "uid": "ward-clinical-monitor",
-  "title": "Ward · Clinical Monitor (live)",
-  "description": "Real-time clinical patient risk monitor answering: Which patients show concerning vital-sign trends right now, and how do yesterday's lab results change their risk picture? Provisioned from observability/grafana/dashboards/.",
+  "title": "Ward - Clinical Monitor (v1, live)",
+  "description": "Which patients show concerning vital-sign trends right now, and how do the latest lab results change their risk? Every number comes from the stream's per-patient gauges; if the stream stops they disappear rather than freeze.",
   "tags": [
     "ward",
-    "kappa",
-    "clinical",
-    "vitals"
+    "kappa"
   ],
   "timezone": "utc",
   "editable": true,
@@ -14,7 +12,7 @@
   "version": 1,
   "refresh": "5s",
   "time": {
-    "from": "now-15m",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {
@@ -30,51 +28,61 @@
     {
       "id": 1,
       "type": "row",
-      "title": "At a glance — ward risk summary",
+      "title": "The ward right now",
       "collapsed": false,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 0
+        "y": 0,
+        "w": 24,
+        "h": 1
       },
       "panels": []
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "Monitored Beds",
-      "description": "Total active monitored beds across the ward (capacity = 40)",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 1
-      },
+      "title": "Beds reporting",
+      "description": "Patients with a current score from the stream. 40 when everything is healthy.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "count(count by (patient_id) (readings_produced_total)) or vector(40)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "count(patient_news2{scorer_version=\"v1\"})",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "value": null,
-                "color": "blue"
+                "color": "red"
+              },
+              {
+                "value": 40,
+                "color": "green"
               }
             ]
+          },
+          "color": {
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -85,37 +93,40 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
+        "colorMode": "background"
+      },
+      "transformations": []
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "Critical Risk Patients",
-      "description": "Patients scoring in the CRITICAL response tier (composite score >= 10)",
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 4,
-        "y": 1
-      },
+      "title": "NEWS2 7 or more",
+      "description": "Patients whose latest NEWS2 is 7+: emergency response threshold.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "sum(increase(risk_scores_written_total{tier=\"CRITICAL\"}[5m])) or vector(0)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "count(patient_news2{scorer_version=\"v1\"} >= 7) or vector(0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -128,6 +139,9 @@
                 "color": "red"
               }
             ]
+          },
+          "color": {
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -138,37 +152,40 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      }
+        "colorMode": "background"
+      },
+      "transformations": []
     },
     {
       "id": 4,
       "type": "stat",
-      "title": "High Risk Patients",
-      "description": "Patients scoring in the HIGH response tier (composite score 7-9)",
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 9,
-        "y": 1
-      },
+      "title": "NEWS2 5 to 6",
+      "description": "Patients whose latest NEWS2 is 5 or 6: urgent review threshold.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "sum(increase(risk_scores_written_total{tier=\"HIGH\"}[5m])) or vector(0)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "count((patient_news2{scorer_version=\"v1\"} >= 5) < 7) or vector(0)",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -181,6 +198,9 @@
                 "color": "orange"
               }
             ]
+          },
+          "color": {
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -191,37 +211,245 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      }
+        "colorMode": "background"
+      },
+      "transformations": []
     },
     {
       "id": 5,
       "type": "stat",
-      "title": "Stale Labs Monitored",
-      "description": "Patients assessed on vitals alone without pathology corroboration (> 2 sim days)",
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 14,
-        "y": 1
-      },
+      "title": "Mean composite risk",
+      "description": "Average of NEWS2 plus lab contribution across the ward snapshot (from the API).",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "serving_stale_labs_patients or vector(0)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "serving_mean_composite_risk",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 3,
+                "color": "orange"
+              },
+              {
+                "value": 5,
+                "color": "red"
+              }
+            ]
+          },
           "color": {
             "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "transformations": []
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Scored without fresh labs",
+      "description": "Patients whose latest score used vitals only, because no lab result from the last two simulated days was available.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
           },
+          "expr": "serving_stale_labs_patients",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 10,
+                "color": "orange"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "transformations": []
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Alerts in last 15 min",
+      "description": "New clinical alert episodes raised by the stream in the last 15 real minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum(increase(clinical_alerts_emitted_total[15m])) or vector(0)",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "transformations": []
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Worst patient first",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Ward list, highest composite risk first",
+      "description": "One row per bed, sorted by composite risk. NEWS2 is the bedside score; the difference is what the latest labs add.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 10,
+        "h": 17
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "patient_composite_risk{scorer_version=\"v1\"}",
+          "legendFormat": "composite",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "patient_news2{scorer_version=\"v1\"}",
+          "legendFormat": "news2",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -231,10 +459,10 @@
               },
               {
                 "value": 5,
-                "color": "yellow"
+                "color": "orange"
               },
               {
-                "value": 10,
+                "value": 7,
                 "color": "red"
               }
             ]
@@ -243,42 +471,74 @@
         "overrides": []
       },
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
         },
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true,
+              "scorer_version": true
+            },
+            "renameByName": {
+              "patient_id": "Patient",
+              "Value #A": "Composite risk",
+              "Value #B": "NEWS2"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Composite risk",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ]
     },
     {
-      "id": 6,
-      "type": "stat",
-      "title": "Mean Ward Risk",
-      "description": "Average composite clinical risk score across all 40 beds",
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 19,
-        "y": 1
-      },
+      "id": 10,
+      "type": "timeseries",
+      "title": "Scripted patients: NEWS2 over time",
+      "description": "P014 develops sepsis on simulated day 2 from 08:00. P031 is a stable COPD patient at SpO2 89-91 %. P007 has one heart-rate spike on day 1 at 14:00.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 10,
+        "y": 6,
+        "w": 14,
+        "h": 9
+      },
       "targets": [
         {
-          "expr": "serving_mean_composite_risk or vector(2.4)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "patient_news2{scorer_version=\"v1\",patient_id=~\"P014|P031|P007\"}",
+          "legendFormat": "{{patient_id}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -287,11 +547,11 @@
                 "color": "green"
               },
               {
-                "value": 4.0,
-                "color": "yellow"
+                "value": 5,
+                "color": "orange"
               },
               {
-                "value": 6.0,
+                "value": 7,
                 "color": "red"
               }
             ]
@@ -300,159 +560,58 @@
         "overrides": []
       },
       "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
-    },
-    {
-      "id": 7,
-      "type": "row",
-      "title": "Risk Tier Distribution & Streaming Evaluation",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 5
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
-      "panels": []
+      "transformations": []
     },
     {
-      "id": 8,
+      "id": 11,
       "type": "timeseries",
-      "title": "Risk Scores Evaluated /sec by Tier",
-      "description": "Continuous throughput of composite risk evaluations segmented by clinical response tier",
+      "title": "Alerts raised, by type",
+      "description": "New alert episodes per type. One episode per condition, not one per reading.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
       "gridPos": {
-        "h": 8,
-        "w": 16,
         "x": 0,
-        "y": 6
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ward-prom"
+        "y": 23,
+        "w": 14,
+        "h": 8
       },
       "targets": [
         {
-          "expr": "sum by (tier) (rate(risk_scores_written_total[1m]))",
-          "legendFormat": "{{tier}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum by (type) (increase(clinical_alerts_emitted_total[2m]))",
+          "legendFormat": "{{type}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 15
-          },
-          "unit": "short"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "CRITICAL"
-            },
-            "properties": [
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
               {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
+                "value": null,
+                "color": "green"
               }
             ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "HIGH"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "MEDIUM"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "yellow",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "LOW"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 9,
-      "type": "barchart",
-      "title": "Clinical Alerts Emitted by Severity",
-      "description": "Real-time alerts emitted by stream processing rules",
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 6
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ward-prom"
-      },
-      "targets": [
-        {
-          "expr": "sum by (severity) (increase(clinical_alerts_emitted_total[15m]))",
-          "legendFormat": "{{severity}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
           }
         },
         "overrides": []
       },
-      "options": {
-        "xField": "severity",
-        "orientation": "horizontal"
-      }
+      "options": {},
+      "transformations": []
     }
   ]
 }

@@ -22,7 +22,6 @@ from typing import Any
 
 import pendulum
 from airflow.decorators import dag, task
-from airflow.exceptions import AirflowFailException
 from airflow.utils.trigger_rule import TriggerRule
 
 DEFAULT_ARGS = {
@@ -81,9 +80,7 @@ def ward_retention() -> None:
             "daily_patient_summary",
             "admissions_by_patient",
         ]
-        storage_status = {
-            t: {"status": "HEALTHY", "tombstone_hazard": False} for t in tables
-        }
+        storage_status = {t: {"status": "HEALTHY", "tombstone_hazard": False} for t in tables}
         print(f"Monitored {len(tables)} Cassandra tables for tombstone and SSTable growth")
         return storage_status
 

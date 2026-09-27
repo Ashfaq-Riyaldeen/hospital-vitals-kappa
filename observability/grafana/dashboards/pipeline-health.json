@@ -1,12 +1,10 @@
 {
   "uid": "ward-pipeline-health",
-  "title": "Ward · Pipeline Health",
-  "description": "End-to-end telemetry across all Kappa architecture stages: INGEST -> STREAM -> STORE -> SERVE. Provisioned from observability/grafana/dashboards/.",
+  "title": "Ward - Pipeline Health",
+  "description": "Is the pipeline alive and keeping up? An empty ward screen and a dead pipeline look the same to a nurse; this dashboard tells them apart.",
   "tags": [
     "ward",
-    "kappa",
-    "pipeline",
-    "health"
+    "kappa"
   ],
   "timezone": "utc",
   "editable": true,
@@ -14,7 +12,7 @@
   "version": 1,
   "refresh": "5s",
   "time": {
-    "from": "now-15m",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {
@@ -30,42 +28,47 @@
     {
       "id": 1,
       "type": "row",
-      "title": "At a glance — stage throughput and health",
+      "title": "Is data flowing?",
       "collapsed": false,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 0
+        "y": 0,
+        "w": 24,
+        "h": 1
       },
       "panels": []
     },
     {
       "id": 2,
       "type": "stat",
-      "title": "INGEST · Readings /sec",
-      "description": "Rate of valid bedside vital signs published to vitals.readings.v1",
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 0,
-        "y": 1
-      },
+      "title": "Readings in (per s)",
+      "description": "Readings delivered to Kafka by the 40 bedside monitors. Expected about 12.8/s (40 beds, one reading per 15 simulated minutes, 288x clock).",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "sum(rate(readings_produced_total{status=\"ok\"}[1m])) or vector(0)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum(rate(readings_produced_total{status=\"ok\"}[1m]))",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "decimals": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -74,12 +77,14 @@
                 "color": "red"
               },
               {
-                "value": 1,
+                "value": 10,
                 "color": "green"
               }
             ]
           },
-          "unit": "reqps"
+          "color": {
+            "mode": "thresholds"
+          }
         },
         "overrides": []
       },
@@ -89,37 +94,41 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      }
+        "colorMode": "background"
+      },
+      "transformations": []
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "STREAM · Scores Written /sec",
-      "description": "Heartbeat of the entire monitoring system: evaluations written to Cassandra",
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 5,
-        "y": 1
-      },
+      "title": "Scores out (per s)",
+      "description": "NEWS2 scores written by the v1 stream. The heartbeat for WardMonitoringSilent.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "sum(rate(risk_scores_written_total[1m])) or vector(0)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum(rate(risk_scores_written_total{scorer_version=\"v1\"}[1m]))",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "decimals": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -128,12 +137,14 @@
                 "color": "red"
               },
               {
-                "value": 1,
+                "value": 10,
                 "color": "green"
               }
             ]
           },
-          "unit": "short"
+          "color": {
+            "mode": "thresholds"
+          }
         },
         "overrides": []
       },
@@ -143,37 +154,42 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "auto"
-      }
+        "colorMode": "background"
+      },
+      "transformations": []
     },
     {
       "id": 4,
       "type": "stat",
-      "title": "WATERMARK · Stream Lag (s)",
-      "description": "Event-time watermark delay behind wall clock in the streaming engine",
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 10,
-        "y": 1
-      },
+      "title": "Dead-letter rate",
+      "description": "Share of readings rejected as physically impossible. The monitors inject faults at about 1.6 %, so this should sit near that.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "stream_watermark_lag_seconds or vector(0)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum(rate(readings_dlq_total[5m])) / sum(rate(readings_validated_total[5m]))",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "unit": "percentunit",
+          "decimals": 2,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -182,8 +198,69 @@
                 "color": "green"
               },
               {
-                "value": 10,
-                "color": "yellow"
+                "value": 0.05,
+                "color": "red"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "transformations": []
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "End-to-end p95",
+      "description": "95th percentile of real seconds from a monitor stamping a reading to its score being in Cassandra.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(stream_end_to_end_seconds_bucket{scorer_version=\"v1\"}[2m])))",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 15,
+                "color": "orange"
               },
               {
                 "value": 30,
@@ -191,49 +268,9 @@
               }
             ]
           },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
-    },
-    {
-      "id": 5,
-      "type": "stat",
-      "title": "SERVE · API Requests /sec",
-      "description": "Request throughput of FastAPI serving layer on port 8100",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 15,
-        "y": 1
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ward-prom"
-      },
-      "targets": [
-        {
-          "expr": "sum(rate(http_requests_total[1m])) or vector(0)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "unit": "reqps"
+            "mode": "thresholds"
+          }
         },
         "overrides": []
       },
@@ -243,37 +280,40 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
+        "colorMode": "background"
+      },
+      "transformations": []
     },
     {
       "id": 6,
       "type": "stat",
-      "title": "SAFETY ALERT · Silent Ward",
-      "description": "Absence of alerts != absence of risk. Fires if rate(risk_scores_written_total) == 0 for 3m.",
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 19,
-        "y": 1
-      },
+      "title": "WardMonitoringSilent",
+      "description": "1 while the safety alert is firing: no scores written for 1 minute.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
       "targets": [
         {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
           "expr": "sum(ALERTS{alertname=\"WardMonitoringSilent\",alertstate=\"firing\"}) or vector(0)",
-          "refId": "A"
+          "legendFormat": "",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -286,6 +326,9 @@
                 "color": "red"
               }
             ]
+          },
+          "color": {
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -296,114 +339,381 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
+        "colorMode": "background"
+      },
+      "transformations": []
     },
     {
       "id": 7,
-      "type": "row",
-      "title": "Ingestion & Data Quality (DLQ)",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 5
-      },
-      "panels": []
-    },
-    {
-      "id": 8,
-      "type": "timeseries",
-      "title": "Bedside Vitals Ingest Rate vs DLQ Rejections",
-      "description": "Throughput of ingested observations vs physiological impossibilities routed to DLQ",
-      "gridPos": {
-        "h": 8,
-        "w": 14,
-        "x": 0,
-        "y": 6
-      },
+      "type": "stat",
+      "title": "Scrape targets up",
+      "description": "Services Prometheus can reach, out of those it scrapes (the replay stream is excluded; it only runs during a replay).",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 20,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "sum(rate(readings_produced_total{status=\"ok\"}[1m]))",
-          "legendFormat": "Valid Ingested",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum(up{job!=\"ward-stream-v2\"})",
+          "legendFormat": "up",
+          "instant": false,
+          "range": true
         },
         {
-          "expr": "sum(rate(readings_dlq_total[1m]))",
-          "legendFormat": "DLQ Rejected",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "count(up{job!=\"ward-stream-v2\"})",
+          "legendFormat": "of",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "fillOpacity": 10
-          },
-          "unit": "reqps"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "DLQ Rejected"
-            },
-            "properties": [
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
               {
-                "id": "color",
-                "value": {
-                  "fixedColor": "red",
-                  "mode": "fixed"
-                }
+                "value": null,
+                "color": "green"
               }
             ]
-          }
-        ]
-      }
-    },
-    {
-      "id": 9,
-      "type": "barchart",
-      "title": "DLQ Rejection Reasons by Device/Defect",
-      "description": "Breakdown of corrupt frames, sensor detachments, and physiological anomalies",
-      "gridPos": {
-        "h": 8,
-        "w": 10,
-        "x": 14,
-        "y": 6
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ward-prom"
-      },
-      "targets": [
-        {
-          "expr": "sum by (reason) (increase(readings_dlq_total[15m]))",
-          "legendFormat": "{{reason}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
+          },
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           }
         },
         "overrides": []
       },
       "options": {
-        "xField": "reason",
-        "orientation": "horizontal"
-      }
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "textMode": "value_and_name"
+      },
+      "transformations": []
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Throughput and latency",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Readings in, scores out, dead letters",
+      "description": "If scores fall away from readings, the stream is falling behind.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum(rate(readings_produced_total{status=\"ok\"}[1m]))",
+          "legendFormat": "readings in",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum(rate(risk_scores_written_total{scorer_version=\"v1\"}[1m]))",
+          "legendFormat": "scores out",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum(rate(readings_dlq_total[1m]))",
+          "legendFormat": "dead-lettered",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "End-to-end latency",
+      "description": "Monitor to Cassandra, in real seconds. The 5-second micro-batch trigger sets the floor.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(stream_end_to_end_seconds_bucket{scorer_version=\"v1\"}[2m])))",
+          "legendFormat": "p50",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(stream_end_to_end_seconds_bucket{scorer_version=\"v1\"}[2m])))",
+          "legendFormat": "p95",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": []
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Micro-batch duration and size",
+      "description": "From the Structured Streaming query listener.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "stream_batch_duration_seconds",
+          "legendFormat": "duration {{scorer_version}}",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "stream_batch_input_rows",
+          "legendFormat": "rows {{scorer_version}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": []
+    },
+    {
+      "id": 12,
+      "type": "barchart",
+      "title": "Injected faults vs dead-lettered, last 30 min",
+      "description": "The fault injector is the control: every injected impossible reading should come out in the dead-letter queue under the same reason.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum by (defect_type) (increase(defects_injected_total[30m]))",
+          "legendFormat": "injected",
+          "instant": true,
+          "range": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum by (reason) (increase(readings_dlq_total[30m]))",
+          "legendFormat": "dead-lettered",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "defect_type",
+            "mode": "outer"
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Kafka topics: messages per second",
+      "description": "From kafka-exporter. Alerts and dead letters are small streams beside vitals.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum by (topic) (rate(kafka_topic_partition_current_offset{topic=~\"vitals.*|labs.*|ward.*\"}[2m]))",
+          "legendFormat": "{{topic}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": []
     }
   ]
 }

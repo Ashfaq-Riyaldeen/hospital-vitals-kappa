@@ -1,12 +1,10 @@
 {
   "uid": "ward-replay-comparison",
-  "title": "Ward · Replay & Reprocessing (v1 vs v2)",
-  "description": "Visual and statistical proof of Kappa historical log replay for the NEWS2 SpO2 Scale 2 clinical rule update. Demonstrates that only COPD patients change (downward), while non-COPD control patients remain 100% bit-identical. Provisioned from observability/grafana/dashboards/.",
+  "title": "Ward - Replay v1 vs v2",
+  "description": "The Kappa replay: ward-stream-v2 re-reads the retained log from offset 0 with NEWS2 Scale 2 for COPD patients. Only COPD patients should change, and only downward.",
   "tags": [
     "ward",
-    "kappa",
-    "replay",
-    "reprocessing"
+    "kappa"
   ],
   "timezone": "utc",
   "editable": true,
@@ -14,7 +12,7 @@
   "version": 1,
   "refresh": "5s",
   "time": {
-    "from": "now-15m",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {
@@ -30,92 +28,108 @@
     {
       "id": 1,
       "type": "row",
-      "title": "At a glance — log replay progress and headline diff",
+      "title": "Replay progress",
       "collapsed": false,
       "gridPos": {
-        "h": 1,
-        "w": 24,
         "x": 0,
-        "y": 0
+        "y": 0,
+        "w": 24,
+        "h": 1
       },
       "panels": []
     },
     {
       "id": 2,
-      "type": "gauge",
-      "title": "Replay Progress",
-      "description": "Percentage of historical 30-day log consumed by ward-stream-v2-replay consumer group",
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 0,
-        "y": 1
-      },
+      "type": "stat",
+      "title": "Replay progress",
+      "description": "Share of the log the v2 stream has re-scored, measured from its per-partition offsets against the end offsets recorded when the replay started.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "replay_progress_pct or vector(100)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "replay_progress_pct",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "min": 0,
-          "max": 100,
           "unit": "percent",
-          "color": {
-            "mode": "thresholds"
-          },
+          "decimals": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
                 "value": null,
-                "color": "blue"
+                "color": "orange"
               },
               {
                 "value": 100,
                 "color": "green"
               }
             ]
+          },
+          "color": {
+            "mode": "thresholds"
           }
         },
         "overrides": []
       },
       "options": {
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true
-      }
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "transformations": []
     },
     {
       "id": 3,
       "type": "stat",
-      "title": "Replay Consumer Lag",
-      "description": "Remaining unconsumed records across topic partitions for replay consumer group",
-      "gridPos": {
-        "h": 5,
-        "w": 4,
-        "x": 6,
-        "y": 1
-      },
+      "title": "Events remaining",
+      "description": "Readings still to be re-scored.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 6,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "sum(kafka_consumergroup_lag{group=~\"ward-stream-.*-replay\"}) or vector(0)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "replay_events_remaining",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
+          "decimals": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -129,47 +143,8 @@
               }
             ]
           },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
-    },
-    {
-      "id": 4,
-      "type": "stat",
-      "title": "COPD Patients Reclassified",
-      "description": "Patients with hypercapnic hypoxia properly accommodated under SpO2 Scale 2",
-      "gridPos": {
-        "h": 5,
-        "w": 4,
-        "x": 10,
-        "y": 1
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ward-prom"
-      },
-      "targets": [
-        {
-          "expr": "vector(6)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
           "color": {
-            "mode": "fixed",
-            "fixedColor": "green"
+            "mode": "thresholds"
           }
         },
         "overrides": []
@@ -180,37 +155,222 @@
             "lastNotNull"
           ]
         },
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
+        "colorMode": "background"
+      },
+      "transformations": []
     },
     {
-      "id": 5,
+      "id": 4,
       "type": "stat",
-      "title": "Control Group Invariant",
-      "description": "Score differences observed on non-COPD control patients (must be exactly 0)",
-      "gridPos": {
-        "h": 5,
-        "w": 5,
-        "x": 14,
-        "y": 1
-      },
+      "title": "Replay duration",
+      "description": "Real seconds from the start of the replay to catching up with the log.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
       "targets": [
         {
-          "expr": "vector(0)",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "replay_duration_seconds",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          },
           "color": {
             "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "transformations": []
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "v2 scores out (per s)",
+      "description": "The replay stream's write rate. Very high while catching up, then the same as v1 once it is live.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 1,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
           },
+          "expr": "sum(rate(risk_scores_written_total{scorer_version=\"v2\"}[1m]))",
+          "legendFormat": "",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "blue"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "background"
+      },
+      "transformations": []
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Log position: live stream vs replay",
+      "description": "Sum of next offsets across the 6 partitions. The replay line climbs from zero to meet the live one.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum(stream_partition_offset{scorer_version=\"v1\"})",
+          "legendFormat": "v1 (live)",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "sum(stream_partition_offset{scorer_version=\"v2\"})",
+          "legendFormat": "v2 (replay)",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": []
+    },
+    {
+      "id": 7,
+      "type": "row",
+      "title": "Did the right patients change?",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "P031 (COPD): NEWS2 under v1 and v2",
+      "description": "Stable at SpO2 89-91 %. Scale 1 (v1) scores that saturation as abnormal; Scale 2 (v2) does not.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "patient_news2{patient_id=\"P031\"}",
+          "legendFormat": "{{scorer_version}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -219,7 +379,11 @@
                 "color": "green"
               },
               {
-                "value": 1,
+                "value": 5,
+                "color": "orange"
+              },
+              {
+                "value": 7,
                 "color": "red"
               }
             ]
@@ -227,177 +391,132 @@
         },
         "overrides": []
       },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
-    },
-    {
-      "id": 6,
-      "type": "stat",
-      "title": "False Alarms Removed",
-      "description": "False SpO2 alarms suppressed on COPD patients without missing true deteriorations",
-      "gridPos": {
-        "h": 5,
-        "w": 5,
-        "x": 19,
-        "y": 1
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ward-prom"
-      },
-      "targets": [
-        {
-          "expr": "vector(180)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "green"
-          }
-        },
-        "overrides": []
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ]
-        },
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "auto"
-      }
-    },
-    {
-      "id": 7,
-      "type": "row",
-      "title": "Version Divergence: COPD vs Non-COPD Trajectories",
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 6
-      },
-      "panels": []
-    },
-    {
-      "id": 8,
-      "type": "timeseries",
-      "title": "COPD Patient P031: v1 (Single Scale) vs v2 (SpO2 Scale 2)",
-      "description": "Under v1, SpO2 90% repeatedly scores 3 (red alarm). Under v2, 90% is baseline normal (0 score).",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 7
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "ward-prom"
-      },
-      "targets": [
-        {
-          "expr": "risk_scores_written_total{patient_id=\"P031\",scorer_version=\"v1\"}",
-          "legendFormat": "P031 - v1 Score",
-          "refId": "A"
-        },
-        {
-          "expr": "risk_scores_written_total{patient_id=\"P031\",scorer_version=\"v2\"}",
-          "legendFormat": "P031 - v2 Score (Scale 2)",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "P031 - v1 Score"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "P031 - v2 Score (Scale 2)"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "green",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      }
+      "options": {},
+      "transformations": []
     },
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Non-COPD Patient P014: Zero-Change Invariant",
-      "description": "Non-COPD patient: v1 and v2 curves are completely identical. Proves replay touched only target population.",
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 7
-      },
+      "title": "P014 (sepsis, not COPD): NEWS2 under v1 and v2",
+      "description": "The control. The two lines must lie on top of each other.",
       "datasource": {
         "type": "prometheus",
         "uid": "ward-prom"
       },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
       "targets": [
         {
-          "expr": "risk_scores_written_total{patient_id=\"P014\",scorer_version=\"v1\"}",
-          "legendFormat": "P014 - v1 Score",
-          "refId": "A"
-        },
-        {
-          "expr": "risk_scores_written_total{patient_id=\"P014\",scorer_version=\"v2\"}",
-          "legendFormat": "P014 - v2 Score",
-          "refId": "B"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "patient_news2{patient_id=\"P014\"}",
+          "legendFormat": "{{scorer_version}}",
+          "instant": false,
+          "range": true
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "drawStyle": "line",
-            "lineInterpolation": "smooth",
-            "lineWidth": 2
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 5,
+                "color": "orange"
+              },
+              {
+                "value": 7,
+                "color": "red"
+              }
+            ]
           }
         },
         "overrides": []
-      }
+      },
+      "options": {},
+      "transformations": []
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Current NEWS2 difference per patient (v2 minus v1)",
+      "description": "Latest score under v2 minus latest under v1, patients that differ only. Every row should be a COPD patient with a negative number.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ward-prom"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "ward-prom"
+          },
+          "expr": "patient_news2{scorer_version=\"v2\"} - ignoring(scorer_version) patient_news2{scorer_version=\"v1\"} != 0",
+          "legendFormat": "",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {},
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "instance": true,
+              "job": true
+            },
+            "renameByName": {
+              "patient_id": "Patient",
+              "Value": "v2 minus v1"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "v2 minus v1"
+              }
+            ]
+          }
+        }
+      ]
     }
   ]
 }

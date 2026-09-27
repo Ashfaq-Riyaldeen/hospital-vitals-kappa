@@ -1,35 +1,78 @@
+# Alert rules. Every metric named here is checked against what the code really emits
+# by tests/unit/test_observability_rules.py - the first version of this file alerted
+# on a metric that did not exist, so its most important rule could never fire.
+#
+# Time here is REAL time. At the 288x simulated clock, 1 real minute is 4.8 simulated
+# hours, so "for: 1m" is already long in ward terms; it is kept short for that reason.
+
 groups:
-  - name: ward_pipeline_alerts
+  - name: ward_clinical_safety
     rules:
       - alert: WardMonitoringSilent
-        expr: rate(risk_scores_written_total[3m]) == 0
-        for: 3m
+        # `or vector(0)` matters: when the stream container is gone its series vanish
+        # entirely, and a plain rate() == 0 would then match nothing and never fire.
+        expr: (sum(rate(risk_scores_written_total{scorer_version="v1"}[1m])) or vector(0)) == 0
+        for: 1m
         labels:
           severity: critical
           category: clinical_safety
         annotations:
-          summary: "Ward monitoring stream has produced zero risk scores for 3 minutes"
-          description: "Absence of alerts must never be mistaken for absence of risk. If risk scores stop being written, the ward monitor is blind."
+          summary: "No risk scores written for 1 minute - the ward screen is blind"
+          description: >-
+            Absence of alerts must never be read as absence of risk. With no scores being
+            written, a deteriorating patient would not show on the ward monitor.
 
-      - alert: NoVitalsIngested
-        expr: rate(readings_produced_total{status="ok"}[2m]) == 0
-        for: 3m
+      - alert: StreamQueryStalled
+        expr: time() - max(stream_last_progress_timestamp_seconds{scorer_version="v1"}) > 60
+        for: 30s
         labels:
           severity: critical
-          category: ingestion_failure
+          category: clinical_safety
         annotations:
-          summary: "No valid bedside vital signs ingested for 3 minutes"
-          description: "All 40 bedside monitors appear disconnected or Kafka ingestion has stalled."
+          summary: "The Spark streaming query has reported no progress for over a minute"
+          description: "The process is up but its query is not running micro-batches."
+
+  - name: ward_pipeline
+    rules:
+      - alert: NoVitalsIngested
+        expr: (sum(rate(readings_produced_total{status="ok"}[1m])) or vector(0)) == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: ingestion
+        annotations:
+          summary: "No bedside readings reached Kafka for 1 minute"
+          description: "All 40 monitors appear disconnected, or Kafka is not accepting writes."
 
       - alert: HighDLQRate
-        expr: rate(readings_dlq_total[5m]) / rate(readings_validated_total[5m]) > 0.05
+        expr: sum(rate(readings_dlq_total[5m])) / sum(rate(readings_validated_total[5m])) > 0.05
         for: 2m
         labels:
           severity: warning
           category: data_quality
         annotations:
-          summary: "Dead Letter Queue rejection rate exceeds 5% of incoming readings"
-          description: "Malfunctioning sensor probes or unparseable frames detected."
+          summary: "More than 5 % of readings are being dead-lettered"
+          description: "The injected fault rate is about 1.6 %. Much more means real probe or device trouble."
+
+      - alert: EndToEndLatencyHigh
+        expr: histogram_quantile(0.95, sum by (le) (rate(stream_end_to_end_seconds_bucket{scorer_version="v1"}[2m]))) > 30
+        for: 2m
+        labels:
+          severity: warning
+          category: latency
+        annotations:
+          summary: "95 % of readings take more than 30 s to reach the ward screen"
+          description: "The stream is falling behind the monitors."
+
+      - alert: ScrapeTargetDown
+        expr: up{job!="ward-stream-v2"} == 0
+        for: 1m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Prometheus cannot reach {{ $labels.job }}"
+          description: "A service is down or its metrics endpoint is not answering."
 
       - alert: StaleLabDataElevated
         expr: serving_stale_labs_patients > 10
@@ -38,15 +81,5 @@ groups:
           severity: warning
           category: clinical_governance
         annotations:
-          summary: "More than 10 ward patients are assessed on vitals alone without pathology corroboration"
-          description: "Lab result ingestion delay exceeds 2 simulated days."
-
-      - alert: ReplayLagHigh
-        expr: kafka_consumergroup_lag{group=~".*replay.*"} > 50000
-        for: 10m
-        labels:
-          severity: info
-          category: replay_reprocessing
-        annotations:
-          summary: "Kappa replay stream consumer lag remains elevated"
-          description: "Stream reprocessing is progressing through historical partitions."
+          summary: "More than 10 patients are being scored without fresh lab results"
+          description: "Lab ingestion may have stalled; composite risk is falling back to NEWS2 alone."
