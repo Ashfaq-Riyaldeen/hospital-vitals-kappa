@@ -1,0 +1,671 @@
+{
+  "base_version": "v1",
+  "target_version": "v2",
+  "generated_at": "2026-09-27T07:26:08.151456+00:00",
+  "total_evaluations": 17822,
+  "total_changed": 4001,
+  "total_identical": 13821,
+  "percent_changed": 22.45,
+  "copd_patients_count": 10,
+  "non_copd_patients_count": 30,
+  "copd_evaluations_changed": 4001,
+  "non_copd_evaluations_changed": 0,
+  "control_group_bit_identical": true,
+  "tier_transition_matrix": {
+    "LOW -> LOW": 15051,
+    "MEDIUM -> MEDIUM": 538,
+    "HIGH -> MEDIUM": 213,
+    "MEDIUM -> HIGH": 21,
+    "LOW -> MEDIUM": 149,
+    "LOW -> HIGH": 4,
+    "MEDIUM -> LOW": 620,
+    "HIGH -> HIGH": 325,
+    "HIGH -> LOW": 394,
+    "LOW_MEDIUM -> LOW": 398,
+    "HIGH -> LOW_MEDIUM": 2,
+    "MEDIUM -> LOW_MEDIUM": 19,
+    "LOW_MEDIUM -> LOW_MEDIUM": 88
+  },
+  "estimated_false_alarms_suppressed": 1035,
+  "new_alarms_raised": 153,
+  "upward_changes": 413,
+  "unexpected_upward_changes": 0,
+  "patient_summaries": [
+    {
+      "patient_id": "P001",
+      "is_copd": true,
+      "total_evaluations": 445,
+      "changed_evaluations": 330,
+      "identical_evaluations": 115,
+      "mean_delta": 0.52,
+      "max_delta": 3,
+      "tier_transitions": {
+        "LOW -> LOW": 236,
+        "MEDIUM -> MEDIUM": 102,
+        "HIGH -> MEDIUM": 25,
+        "MEDIUM -> HIGH": 2,
+        "LOW -> MEDIUM": 58,
+        "LOW -> HIGH": 4,
+        "MEDIUM -> LOW": 13,
+        "HIGH -> HIGH": 3,
+        "HIGH -> LOW": 2
+      },
+      "alerts_v1": 39,
+      "alerts_v2": 25
+    },
+    {
+      "patient_id": "P002",
+      "is_copd": true,
+      "total_evaluations": 444,
+      "changed_evaluations": 444,
+      "identical_evaluations": 0,
+      "mean_delta": -2.61,
+      "max_delta": -3,
+      "tier_transitions": {
+        "LOW -> LOW": 151,
+        "LOW_MEDIUM -> LOW": 166,
+        "MEDIUM -> LOW": 118,
+        "HIGH -> LOW": 8,
+        "HIGH -> LOW_MEDIUM": 1
+      },
+      "alerts_v1": 23,
+      "alerts_v2": 1
+    },
+    {
+      "patient_id": "P003",
+      "is_copd": true,
+      "total_evaluations": 437,
+      "changed_evaluations": 437,
+      "identical_evaluations": 0,
+      "mean_delta": -2.56,
+      "max_delta": -3,
+      "tier_transitions": {
+        "MEDIUM -> LOW": 192,
+        "LOW -> LOW": 177,
+        "LOW_MEDIUM -> LOW": 51,
+        "MEDIUM -> LOW_MEDIUM": 16,
+        "HIGH -> LOW_MEDIUM": 1
+      },
+      "alerts_v1": 25,
+      "alerts_v2": 5
+    },
+    {
+      "patient_id": "P004",
+      "is_copd": false,
+      "total_evaluations": 447,
+      "changed_evaluations": 0,
+      "identical_evaluations": 447,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 441,
+        "MEDIUM -> MEDIUM": 3,
+        "LOW_MEDIUM -> LOW_MEDIUM": 3
+      },
+      "alerts_v1": 4,
+      "alerts_v2": 4
+    },
+    {
+      "patient_id": "P005",
+      "is_copd": false,
+      "total_evaluations": 447,
+      "changed_evaluations": 0,
+      "identical_evaluations": 447,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 443,
+        "MEDIUM -> MEDIUM": 1,
+        "LOW_MEDIUM -> LOW_MEDIUM": 3
+      },
+      "alerts_v1": 2,
+      "alerts_v2": 2
+    },
+    {
+      "patient_id": "P006",
+      "is_copd": false,
+      "total_evaluations": 443,
+      "changed_evaluations": 0,
+      "identical_evaluations": 443,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 427,
+        "LOW_MEDIUM -> LOW_MEDIUM": 15,
+        "MEDIUM -> MEDIUM": 1
+      },
+      "alerts_v1": 7,
+      "alerts_v2": 7
+    },
+    {
+      "patient_id": "P007",
+      "is_copd": false,
+      "total_evaluations": 442,
+      "changed_evaluations": 0,
+      "identical_evaluations": 442,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 432,
+        "MEDIUM -> MEDIUM": 9,
+        "LOW_MEDIUM -> LOW_MEDIUM": 1
+      },
+      "alerts_v1": 7,
+      "alerts_v2": 7
+    },
+    {
+      "patient_id": "P008",
+      "is_copd": true,
+      "total_evaluations": 441,
+      "changed_evaluations": 356,
+      "identical_evaluations": 85,
+      "mean_delta": -1.1,
+      "max_delta": -3,
+      "tier_transitions": {
+        "MEDIUM -> LOW": 89,
+        "MEDIUM -> MEDIUM": 188,
+        "HIGH -> MEDIUM": 59,
+        "LOW -> MEDIUM": 10,
+        "LOW -> LOW": 52,
+        "HIGH -> LOW": 37,
+        "HIGH -> HIGH": 2,
+        "MEDIUM -> HIGH": 4
+      },
+      "alerts_v1": 26,
+      "alerts_v2": 20
+    },
+    {
+      "patient_id": "P009",
+      "is_copd": false,
+      "total_evaluations": 447,
+      "changed_evaluations": 0,
+      "identical_evaluations": 447,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 447
+      },
+      "alerts_v1": 0,
+      "alerts_v2": 0
+    },
+    {
+      "patient_id": "P010",
+      "is_copd": false,
+      "total_evaluations": 444,
+      "changed_evaluations": 0,
+      "identical_evaluations": 444,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 440,
+        "MEDIUM -> MEDIUM": 4
+      },
+      "alerts_v1": 5,
+      "alerts_v2": 5
+    },
+    {
+      "patient_id": "P011",
+      "is_copd": false,
+      "total_evaluations": 449,
+      "changed_evaluations": 0,
+      "identical_evaluations": 449,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 421,
+        "LOW_MEDIUM -> LOW_MEDIUM": 28
+      },
+      "alerts_v1": 7,
+      "alerts_v2": 7
+    },
+    {
+      "patient_id": "P012",
+      "is_copd": true,
+      "total_evaluations": 445,
+      "changed_evaluations": 445,
+      "identical_evaluations": 0,
+      "mean_delta": -2.1,
+      "max_delta": -3,
+      "tier_transitions": {
+        "LOW -> LOW": 336,
+        "MEDIUM -> LOW": 45,
+        "LOW_MEDIUM -> LOW": 64
+      },
+      "alerts_v1": 36,
+      "alerts_v2": 1
+    },
+    {
+      "patient_id": "P013",
+      "is_copd": false,
+      "total_evaluations": 443,
+      "changed_evaluations": 0,
+      "identical_evaluations": 443,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 443
+      },
+      "alerts_v1": 0,
+      "alerts_v2": 0
+    },
+    {
+      "patient_id": "P014",
+      "is_copd": false,
+      "total_evaluations": 445,
+      "changed_evaluations": 0,
+      "identical_evaluations": 445,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 141,
+        "MEDIUM -> MEDIUM": 3,
+        "HIGH -> HIGH": 301
+      },
+      "alerts_v1": 7,
+      "alerts_v2": 5
+    },
+    {
+      "patient_id": "P015",
+      "is_copd": false,
+      "total_evaluations": 445,
+      "changed_evaluations": 0,
+      "identical_evaluations": 445,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 445
+      },
+      "alerts_v1": 0,
+      "alerts_v2": 0
+    },
+    {
+      "patient_id": "P016",
+      "is_copd": false,
+      "total_evaluations": 443,
+      "changed_evaluations": 0,
+      "identical_evaluations": 443,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 375,
+        "MEDIUM -> MEDIUM": 58,
+        "LOW_MEDIUM -> LOW_MEDIUM": 4,
+        "HIGH -> HIGH": 6
+      },
+      "alerts_v1": 26,
+      "alerts_v2": 25
+    },
+    {
+      "patient_id": "P017",
+      "is_copd": false,
+      "total_evaluations": 445,
+      "changed_evaluations": 0,
+      "identical_evaluations": 445,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 441,
+        "LOW_MEDIUM -> LOW_MEDIUM": 1,
+        "MEDIUM -> MEDIUM": 3
+      },
+      "alerts_v1": 4,
+      "alerts_v2": 4
+    },
+    {
+      "patient_id": "P018",
+      "is_copd": true,
+      "total_evaluations": 441,
+      "changed_evaluations": 385,
+      "identical_evaluations": 56,
+      "mean_delta": -1.18,
+      "max_delta": -3,
+      "tier_transitions": {
+        "LOW -> LOW": 410,
+        "MEDIUM -> LOW": 23,
+        "MEDIUM -> LOW_MEDIUM": 3,
+        "LOW_MEDIUM -> LOW": 4,
+        "HIGH -> LOW": 1
+      },
+      "alerts_v1": 17,
+      "alerts_v2": 3
+    },
+    {
+      "patient_id": "P019",
+      "is_copd": false,
+      "total_evaluations": 446,
+      "changed_evaluations": 0,
+      "identical_evaluations": 446,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 420,
+        "MEDIUM -> MEDIUM": 25,
+        "HIGH -> HIGH": 1
+      },
+      "alerts_v1": 20,
+      "alerts_v2": 20
+    },
+    {
+      "patient_id": "P020",
+      "is_copd": false,
+      "total_evaluations": 439,
+      "changed_evaluations": 0,
+      "identical_evaluations": 439,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 421,
+        "MEDIUM -> MEDIUM": 11,
+        "LOW_MEDIUM -> LOW_MEDIUM": 6,
+        "HIGH -> HIGH": 1
+      },
+      "alerts_v1": 14,
+      "alerts_v2": 14
+    },
+    {
+      "patient_id": "P021",
+      "is_copd": true,
+      "total_evaluations": 445,
+      "changed_evaluations": 410,
+      "identical_evaluations": 35,
+      "mean_delta": -1.26,
+      "max_delta": -3,
+      "tier_transitions": {
+        "LOW -> LOW": 442,
+        "LOW_MEDIUM -> LOW": 1,
+        "MEDIUM -> LOW": 2
+      },
+      "alerts_v1": 4,
+      "alerts_v2": 0
+    },
+    {
+      "patient_id": "P022",
+      "is_copd": false,
+      "total_evaluations": 441,
+      "changed_evaluations": 0,
+      "identical_evaluations": 441,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 439,
+        "LOW_MEDIUM -> LOW_MEDIUM": 2
+      },
+      "alerts_v1": 1,
+      "alerts_v2": 1
+    },
+    {
+      "patient_id": "P023",
+      "is_copd": false,
+      "total_evaluations": 449,
+      "changed_evaluations": 0,
+      "identical_evaluations": 449,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 449
+      },
+      "alerts_v1": 0,
+      "alerts_v2": 0
+    },
+    {
+      "patient_id": "P024",
+      "is_copd": false,
+      "total_evaluations": 449,
+      "changed_evaluations": 0,
+      "identical_evaluations": 449,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 449
+      },
+      "alerts_v1": 0,
+      "alerts_v2": 0
+    },
+    {
+      "patient_id": "P025",
+      "is_copd": false,
+      "total_evaluations": 450,
+      "changed_evaluations": 0,
+      "identical_evaluations": 450,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 442,
+        "MEDIUM -> MEDIUM": 5,
+        "LOW_MEDIUM -> LOW_MEDIUM": 3
+      },
+      "alerts_v1": 5,
+      "alerts_v2": 5
+    },
+    {
+      "patient_id": "P026",
+      "is_copd": false,
+      "total_evaluations": 440,
+      "changed_evaluations": 0,
+      "identical_evaluations": 440,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 440
+      },
+      "alerts_v1": 0,
+      "alerts_v2": 0
+    },
+    {
+      "patient_id": "P027",
+      "is_copd": false,
+      "total_evaluations": 450,
+      "changed_evaluations": 0,
+      "identical_evaluations": 450,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 430,
+        "MEDIUM -> MEDIUM": 19,
+        "HIGH -> HIGH": 1
+      },
+      "alerts_v1": 13,
+      "alerts_v2": 13
+    },
+    {
+      "patient_id": "P028",
+      "is_copd": false,
+      "total_evaluations": 444,
+      "changed_evaluations": 0,
+      "identical_evaluations": 444,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 443,
+        "LOW_MEDIUM -> LOW_MEDIUM": 1
+      },
+      "alerts_v1": 2,
+      "alerts_v2": 2
+    },
+    {
+      "patient_id": "P029",
+      "is_copd": false,
+      "total_evaluations": 449,
+      "changed_evaluations": 0,
+      "identical_evaluations": 449,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 431,
+        "LOW_MEDIUM -> LOW_MEDIUM": 18
+      },
+      "alerts_v1": 6,
+      "alerts_v2": 6
+    },
+    {
+      "patient_id": "P030",
+      "is_copd": true,
+      "total_evaluations": 448,
+      "changed_evaluations": 300,
+      "identical_evaluations": 148,
+      "mean_delta": -0.07,
+      "max_delta": 3,
+      "tier_transitions": {
+        "LOW -> LOW": 152,
+        "MEDIUM -> LOW": 83,
+        "LOW -> MEDIUM": 81,
+        "MEDIUM -> MEDIUM": 56,
+        "HIGH -> MEDIUM": 51,
+        "MEDIUM -> HIGH": 15,
+        "HIGH -> HIGH": 10
+      },
+      "alerts_v1": 25,
+      "alerts_v2": 23
+    },
+    {
+      "patient_id": "P031",
+      "is_copd": true,
+      "total_evaluations": 448,
+      "changed_evaluations": 448,
+      "identical_evaluations": 0,
+      "mean_delta": -3.0,
+      "max_delta": -3,
+      "tier_transitions": {
+        "HIGH -> LOW": 346,
+        "HIGH -> MEDIUM": 78,
+        "MEDIUM -> LOW": 24
+      },
+      "alerts_v1": 24,
+      "alerts_v2": 27
+    },
+    {
+      "patient_id": "P032",
+      "is_copd": false,
+      "total_evaluations": 449,
+      "changed_evaluations": 0,
+      "identical_evaluations": 449,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 448,
+        "MEDIUM -> MEDIUM": 1
+      },
+      "alerts_v1": 2,
+      "alerts_v2": 2
+    },
+    {
+      "patient_id": "P033",
+      "is_copd": false,
+      "total_evaluations": 451,
+      "changed_evaluations": 0,
+      "identical_evaluations": 451,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 408,
+        "MEDIUM -> MEDIUM": 43
+      },
+      "alerts_v1": 21,
+      "alerts_v2": 21
+    },
+    {
+      "patient_id": "P034",
+      "is_copd": false,
+      "total_evaluations": 449,
+      "changed_evaluations": 0,
+      "identical_evaluations": 449,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 449
+      },
+      "alerts_v1": 0,
+      "alerts_v2": 0
+    },
+    {
+      "patient_id": "P035",
+      "is_copd": false,
+      "total_evaluations": 449,
+      "changed_evaluations": 0,
+      "identical_evaluations": 449,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 449
+      },
+      "alerts_v1": 0,
+      "alerts_v2": 0
+    },
+    {
+      "patient_id": "P036",
+      "is_copd": false,
+      "total_evaluations": 446,
+      "changed_evaluations": 0,
+      "identical_evaluations": 446,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 443,
+        "MEDIUM -> MEDIUM": 3
+      },
+      "alerts_v1": 6,
+      "alerts_v2": 6
+    },
+    {
+      "patient_id": "P037",
+      "is_copd": false,
+      "total_evaluations": 445,
+      "changed_evaluations": 0,
+      "identical_evaluations": 445,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 445
+      },
+      "alerts_v1": 1,
+      "alerts_v2": 1
+    },
+    {
+      "patient_id": "P038",
+      "is_copd": false,
+      "total_evaluations": 450,
+      "changed_evaluations": 0,
+      "identical_evaluations": 450,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 449,
+        "LOW_MEDIUM -> LOW_MEDIUM": 1
+      },
+      "alerts_v1": 2,
+      "alerts_v2": 2
+    },
+    {
+      "patient_id": "P039",
+      "is_copd": false,
+      "total_evaluations": 445,
+      "changed_evaluations": 0,
+      "identical_evaluations": 445,
+      "mean_delta": 0.0,
+      "max_delta": 0,
+      "tier_transitions": {
+        "LOW -> LOW": 440,
+        "MEDIUM -> MEDIUM": 3,
+        "LOW_MEDIUM -> LOW_MEDIUM": 2
+      },
+      "alerts_v1": 4,
+      "alerts_v2": 4
+    },
+    {
+      "patient_id": "P040",
+      "is_copd": true,
+      "total_evaluations": 447,
+      "changed_evaluations": 446,
+      "identical_evaluations": 1,
+      "mean_delta": -2.21,
+      "max_delta": -3,
+      "tier_transitions": {
+        "LOW -> LOW": 304,
+        "LOW_MEDIUM -> LOW": 112,
+        "MEDIUM -> LOW": 31
+      },
+      "alerts_v1": 26,
+      "alerts_v2": 0
+    }
+  ]
+}
