@@ -177,6 +177,10 @@ class StreamPipelineRunner:
         self._session = get_session(keyspace=self.store_cfg.keyspace, cluster=self._cluster)
         self.dao = WardStoreDAO(self._session)
         self.producer = build_producer(f"stream-{scorer_version}")
+        # Dead letters and late readings are facts about the INPUT, not about the
+        # scoring rule. A replay re-reads the same log, so it must not write them a
+        # second time (the first replay doubled the dead-letter topic).
+        self.write_side_outputs = os.environ.get("WRITE_SIDE_OUTPUTS", "true") == "true"
 
         self.reference = ReferenceData(self.k_cfg, scorer_version, on_lab=self._store_lab)
         self.processor = StreamProcessor(
@@ -213,7 +217,8 @@ class StreamPipelineRunner:
         except Exception as exc:
             metrics.readings_validated_total.labels(result="rejected").inc()
             metrics.readings_dlq_total.labels(reason="UNDECODABLE", device_id="unknown").inc()
-            self._dead_letter(raw, "UNDECODABLE", str(exc), None, None, None, partition, offset)
+            if self.write_side_outputs:
+                self._dead_letter(raw, "UNDECODABLE", str(exc), None, None, None, partition, offset)
             return
 
         out = self.processor.process(reading, clock_now=sent_at_sim(self.clock, reading))
@@ -225,22 +230,24 @@ class StreamPipelineRunner:
             reason = out.reason or "UNKNOWN"
             metrics.readings_validated_total.labels(result="rejected").inc()
             metrics.readings_dlq_total.labels(reason=reason, device_id=reading.device_id).inc()
-            self._dead_letter(
-                raw,
-                reason,
-                f"physiologically impossible reading: {reason}",
-                reading.patient_id,
-                reading.device_id,
-                reading.measured_at,
-                partition,
-                offset,
-            )
+            if self.write_side_outputs:
+                self._dead_letter(
+                    raw,
+                    reason,
+                    f"physiologically impossible reading: {reason}",
+                    reading.patient_id,
+                    reading.device_id,
+                    reading.measured_at,
+                    partition,
+                    offset,
+                )
             if out.summary is not None:
                 write_batch_data(self.dao, [], [], [], [], [out.summary])
             return
         if out.kind == KIND_LATE:
             metrics.readings_late_total.inc()
-            self._produce(self.k_cfg.late_topic, reading.patient_id, raw)
+            if self.write_side_outputs:
+                self._produce(self.k_cfg.late_topic, reading.patient_id, raw)
             write_batch_data(self.dao, [self._vital_row(reading)], [], [], [], [])
             return
 

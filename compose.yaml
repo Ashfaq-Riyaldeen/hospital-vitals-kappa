@@ -321,6 +321,7 @@ services:
       SCORER_VERSION: v2
       CONSUMER_GROUP: ward-stream-v2
       STARTING_OFFSETS: earliest
+      WRITE_SIDE_OUTPUTS: "false" # dead letters and late readings come from v1 only
     volumes:
       - ./state:/state:ro
       - spark-checkpoints:/checkpoints
