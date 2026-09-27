@@ -52,6 +52,7 @@ from ward.stream.processor import (
     KIND_REJECTED,
     Outcome,
     StreamProcessor,
+    sent_at_sim,
 )
 from ward.stream.sinks import write_batch_data
 
@@ -215,8 +216,7 @@ class StreamPipelineRunner:
             self._dead_letter(raw, "UNDECODABLE", str(exc), None, None, None, partition, offset)
             return
 
-        now = self.clock.sim_now() if self.clock else None
-        out = self.processor.process(reading, clock_now=now)
+        out = self.processor.process(reading, clock_now=sent_at_sim(self.clock, reading))
 
         if out.kind == KIND_DUPLICATE:
             metrics.readings_deduplicated_total.inc()

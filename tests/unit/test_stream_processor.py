@@ -233,3 +233,29 @@ def test_scripted_patients_through_the_real_stream_logic() -> None:
     assert alerts["P014"][ALERT_NEWS2_HIGH] == 1
     # P007's lone heart-rate spike (day 1, 14:00) raises nothing within 2 hours.
     assert sum(alerts["P007_SPIKE"].values()) == 0
+
+
+def test_future_stamp_is_caught_even_in_a_backlog() -> None:
+    """Reproduces the first live outage test: after a restart the stream processed a
+    backlog while the clock was hours ahead, so a reading stamped 2 h in the future
+    passed, and the patient's next four real readings were routed to the late topic."""
+    from ward.simclock import SimClock
+    from ward.stream.processor import sent_at_sim
+
+    real0 = datetime(2026, 9, 27, 6, 0, tzinfo=UTC)
+    clock = SimClock(epoch_wall=real0, epoch_sim=EPOCH, day_seconds=300)
+    proc = StreamProcessor("v1")
+    sent = real0 + timedelta(seconds=60)  # 4.8 simulated hours after the epoch
+    sim_sent = clock.sim_now(sent)
+    ok = _reading(sim_sent).model_copy(update={"ingest_time": sent})
+    future = _reading(sim_sent + timedelta(hours=2)).model_copy(update={"ingest_time": sent})
+    nxt = _reading(sim_sent + timedelta(minutes=15)).model_copy(
+        update={"ingest_time": sent + timedelta(seconds=3)}
+    )
+    for r in (ok, future, nxt):
+        # Processed much later than sent, as in a backlog.
+        out = proc.process(r, clock_now=sent_at_sim(clock, r))
+        if r is future:
+            assert out.kind == KIND_REJECTED and out.reason == "FUTURE_TIMESTAMP"
+        else:
+            assert out.kind == KIND_SCORED

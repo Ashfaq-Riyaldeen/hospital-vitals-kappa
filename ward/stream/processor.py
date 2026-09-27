@@ -21,6 +21,7 @@ from typing import Final
 from ward.clinical.composite_risk import CompositeRiskResult, evaluate_composite_risk
 from ward.clinical.news2 import News2Result, score_news2
 from ward.contracts.models import Admission, LabResult, VitalsReading
+from ward.simclock import SimClock
 from ward.store.dao import DailyPatientSummaryRow
 from ward.stream.alerts import ClinicalAlert, evaluate_clinical_alerts, make_alert_id
 from ward.stream.clean import REASON_FUTURE_TIMESTAMP, validate_reading
@@ -89,6 +90,20 @@ class Outcome:
     has_admission: bool = True
 
 
+def sent_at_sim(clock: SimClock | None, reading: VitalsReading) -> datetime | None:
+    """The simulated time at which the monitor SENT this reading.
+
+    This is the reference for the future-timestamp check. The first version used the
+    clock at processing time, which only works while the stream is keeping up: after a
+    restart the stream works through a backlog while the clock is hours ahead, so a
+    reading stamped two hours in the future passed as normal, became the patient's
+    newest reading, and pushed their next four real readings into the late topic. A
+    replay would do the same to every future-stamped reading in the log. The moment
+    the reading was sent does not move with processing delay.
+    """
+    return clock.sim_now(reading.ingest_time) if clock is not None else None
+
+
 class StreamProcessor:
     """Stateful, I/O-free transform from one reading to one Outcome."""
 
@@ -118,10 +133,11 @@ class StreamProcessor:
     def process(self, reading: VitalsReading, clock_now: datetime | None = None) -> Outcome:
         """Decide what one reading is and, if it is real, score it.
 
-        `clock_now` is the shared simulated clock, used only to catch readings stamped
-        in the future. It must NOT be the reading's own time: a reading can never be
-        in the future relative to itself, so that check would never fire. During a
-        replay the log is older than the clock, which is fine.
+        `clock_now` is the simulated time the reading was sent (see `sent_at_sim`),
+        used only to catch readings stamped in the future. It must not be the
+        reading's own measured_at - nothing is in the future relative to itself - and
+        it must not be the clock at processing time, which runs ahead during a
+        backlog or a replay.
         """
         state = self._patients.setdefault(reading.patient_id, _PatientState())
 
