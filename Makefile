@@ -188,15 +188,15 @@ e2e: ## ★ End-to-end: consume real readings and score them with the real score
 ##@ Report and Artifacts
 
 .PHONY: diagrams
-diagrams: ## Compile TikZ vector architecture diagrams (D1-D4)
+diagrams: ## Export the draw.io diagrams (D1-D6) to PDF
 	$(MAKE) -C docs/diagrams
 
 .PHONY: figures
-figures: ## Synthesize or capture report evidence figures (R1-R9b)
+figures: ## Capture every report screenshot from the RUNNING stack (make up first)
 	.venv/bin/python scripts/capture_figures.py
 
 .PHONY: report
-report: diagrams figures ## Build the complete academic coursework report PDF
+report: diagrams ## Build the report PDF (screenshots come from 'make figures')
 	$(MAKE) -C docs/report
 
 .PHONY: report-check
