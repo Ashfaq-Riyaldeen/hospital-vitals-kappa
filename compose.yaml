@@ -289,6 +289,38 @@ services:
       OBS_METRICS_PORT: 8104
       SCORER_VERSION: v1
       CONSUMER_GROUP: ward-stream-v1
+      STARTING_OFFSETS: earliest
+    volumes:
+      - ./state:/state:ro
+      - spark-checkpoints:/checkpoints
+    restart: unless-stopped
+    mem_limit: 1536m
+    logging: *default-logging
+
+  # THE REPLAY. The same image and the same pipeline file as ward-stream, with only
+  # three settings changed: the scorer version, where in the log to start, and its
+  # own checkpoint (the path includes the version). Started on demand by
+  # `make replay`; it reads the retained log from offset 0, catches up, and then
+  # keeps running live beside v1 until a cutover decides which one is served.
+  ward-stream-v2:
+    build: { context: ., dockerfile: docker/spark-app/Dockerfile }
+    container_name: ward-stream-v2
+    profiles: ["replay"]
+    depends_on:
+      cassandra: { condition: service_healthy }
+    ports:
+      - "4141:4040" # Spark UI for the replay
+      - "8105:8105" # /metrics
+    env_file: [.env]
+    environment:
+      KAFKA_BOOTSTRAP: kafka:29092
+      KAFKA_SCHEMA_REGISTRY_URL: http://schema-registry:8181
+      SIM_STATE_PATH: /state/sim_epoch.json
+      OBS_SERVICE_NAME: ward-stream-v2
+      OBS_METRICS_PORT: 8105
+      SCORER_VERSION: v2
+      CONSUMER_GROUP: ward-stream-v2
+      STARTING_OFFSETS: earliest
     volumes:
       - ./state:/state:ro
       - spark-checkpoints:/checkpoints
@@ -473,7 +505,7 @@ services:
     image: danielqsj/kafka-exporter:v1.7.0
     container_name: ward-kafka-exporter
     command:
-      - "--kafka.server=kafka:9092"
+      - "--kafka.server=kafka:29092"
     ports:
       - "9309:9308"
     depends_on:

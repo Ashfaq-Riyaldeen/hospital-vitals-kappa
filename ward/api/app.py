@@ -300,13 +300,20 @@ async def get_alerts_feed(
     sim_date: str | None = Query(None, description="Simulated calendar date (YYYY-MM-DD)"),
     severity: str | None = Query(None, description="Optional severity filter"),
     limit: int = Query(50, ge=1, le=200),
+    version: str | None = Query(None, description="Scorer version; defaults to the active one"),
 ) -> list[AlertItem]:
     """Retrieve time-bounded ward alerts (Q4)."""
     dao = _get_dao()
     # Default to TODAY on the simulated clock. It used to default to the first day
     # of the run, so the alert feed went quiet from day 2 onwards.
     target_date = date.fromisoformat(sim_date) if sim_date else _current_sim_date()
-    alerts = await read_ward_alerts(dao, ward_id=ward_id, alert_date=target_date, limit=limit)
+    alerts = await read_ward_alerts(
+        dao,
+        ward_id=ward_id,
+        alert_date=target_date,
+        limit=limit,
+        version=version or _active_version(),
+    )
     if severity:
         sev_upper = severity.upper()
         alerts = [a for a in alerts if a.severity.upper() == sev_upper]
@@ -335,6 +342,7 @@ async def post_alert_acknowledgement(
         alert_date=target_date,
         alert_time=alert_time,
         alert_id=alert_id,
+        version=_active_version(),
     )
     return AlertAcknowledgeResponse(
         alert_id=alert_id,

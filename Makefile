@@ -111,10 +111,8 @@ ports: ## What is listening where
 	@echo "  Grafana       http://localhost:3100"
 	@echo "  monitors      http://localhost:8101/metrics"
 	@echo "  lab uploader  http://localhost:8102/metrics"
-	@echo ""
-	@echo "  NOTE: 91xx/81xx/31xx avoid the sibling ride-hailing stack's"
-	@echo "        90xx/80xx/30xx. The two cannot run at the same time regardless -"
-	@echo "        each peaks near 10 GB of the ~11 GB Docker gets."
+	@echo "  Spark UI      http://localhost:4140   (replay v2: 4141)"
+	@echo "  stream        http://localhost:8104/metrics (replay v2: 8105)"
 
 .PHONY: grafana
 grafana: ## Open Grafana dashboards in browser (http://localhost:3100)
@@ -125,26 +123,44 @@ grafana: ## Open Grafana dashboards in browser (http://localhost:3100)
 ##@ Replay & Reprocessing (Kappa)
 
 VERSION ?= v2
+# The replay tools run INSIDE the stream container: .env names services by their
+# compose hostnames (kafka:29092, cassandra), which the host cannot resolve.
+IN_STREAM := docker exec ward-stream python -m
 
 .PHONY: replay
-replay: ## Launch log replay for target scorer version (e.g. make replay VERSION=v2)
-	.venv/bin/python -m ward.replay.replay_runner --target-version $(VERSION)
+replay: ## ★ Start ward-stream-v2 from offset 0 and watch it catch up (make replay VERSION=v2)
+	$(COMPOSE) --profile replay up -d --build ward-stream-v2
+	$(IN_STREAM) ward.replay.replay_runner --target-version $(VERSION) \
+	  --metrics-url http://ward-stream-v2:8105/metrics
 
 .PHONY: replay-status
-replay-status: ## Poll progress and lag of active replay consumer group
-	.venv/bin/python -m ward.replay.replay_runner --target-version $(VERSION) --wait
+replay-status: ## Progress of a running replay
+	$(IN_STREAM) ward.replay.replay_runner --target-version $(VERSION) \
+	  --metrics-url http://ward-stream-v2:8105/metrics --timeout 5 || true
 
 .PHONY: diff
-diff: ## Generate clinical diff report between v1 and v2
-	.venv/bin/python -m ward.replay.compare_versions --v1 v1 --v2 $(VERSION)
+diff: ## Compare v1 and the replayed version, reading by reading
+	$(IN_STREAM) ward.replay.compare_versions --v1 v1 --v2 $(VERSION) --out-dir /tmp/diff
+	docker cp ward-stream:/tmp/diff/. reports/
 
 .PHONY: cutover
-cutover: ## Instantaneously switch active serving version (e.g. make cutover VERSION=v2)
-	.venv/bin/python -m ward.replay.cutover --version $(VERSION)
+cutover: ## Switch the served version through the API (make cutover VERSION=v2)
+	curl -fsS -X POST localhost:8100/api/v1/pipeline/cutover \
+	  -H 'Content-Type: application/json' -d '{"target_version":"$(VERSION)"}'; echo
 
 .PHONY: rollback
-rollback: ## Roll back active serving version to v1
-	.venv/bin/python -m ward.replay.cutover --rollback
+rollback: ## Switch the served version back to v1
+	$(MAKE) --no-print-directory cutover VERSION=v1
+
+.PHONY: chaos-stop-stream
+chaos-stop-stream: ## Stop the v1 stream so WardMonitoringSilent fires; restart with 'make chaos-heal'
+	$(COMPOSE) stop ward-stream
+	@date -u +"stream stopped at %H:%M:%SZ"
+
+.PHONY: chaos-heal
+chaos-heal: ## Bring the v1 stream back
+	$(COMPOSE) up -d ward-stream
+	@date -u +"stream restarted at %H:%M:%SZ"
 
 # ---------------------------------------------------------------------------
 ##@ Verifying

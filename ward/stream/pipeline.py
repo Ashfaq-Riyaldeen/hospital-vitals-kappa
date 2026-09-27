@@ -20,6 +20,7 @@ import signal
 import sys
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -38,6 +39,7 @@ from ward.obs.log import configure, get_logger
 from ward.simclock import SimClock, read_anchor
 from ward.store.dao import (
     AlertRow,
+    LabResultRow,
     RiskScoreRow,
     VitalReadingRow,
     WardRiskSnapshotRow,
@@ -66,8 +68,14 @@ class ReferenceData:
     a background thread for the life of the stream.
     """
 
-    def __init__(self, k_cfg: settings.KafkaSettings, scorer_version: str) -> None:
+    def __init__(
+        self,
+        k_cfg: settings.KafkaSettings,
+        scorer_version: str,
+        on_lab: Callable[[LabResult], None] | None = None,
+    ) -> None:
         self.k_cfg = k_cfg
+        self._on_lab = on_lab
         self.admissions: dict[str, Admission] = {}
         self.labs: dict[str, dict[str, LabResult]] = {}
         self._consumer = Consumer(
@@ -93,6 +101,8 @@ class ReferenceData:
                 lab = LabResult(**deserialize(value, topic, schema_file="lab_result.avsc"))
                 self.labs.setdefault(lab.patient_id, {})[lab.test_type.lower()] = lab
                 metrics.lab_results_cached_total.inc()
+                if self._on_lab is not None:
+                    self._on_lab(lab)
         except Exception as exc:
             log.warning("reference_record_undecodable", topic=topic, error=str(exc))
 
@@ -135,6 +145,10 @@ class ReferenceData:
     def stop(self) -> None:
         self._running = False
 
+    def close(self) -> None:
+        """For one-off readers that never call follow()."""
+        self._consumer.close()
+
 
 def _clock() -> SimClock | None:
     path = Path(os.environ.get("SIM_STATE_PATH", "/state/sim_epoch.json"))
@@ -163,7 +177,7 @@ class StreamPipelineRunner:
         self.dao = WardStoreDAO(self._session)
         self.producer = build_producer(f"stream-{scorer_version}")
 
-        self.reference = ReferenceData(self.k_cfg, scorer_version)
+        self.reference = ReferenceData(self.k_cfg, scorer_version, on_lab=self._store_lab)
         self.processor = StreamProcessor(
             scorer_version=scorer_version,
             admissions=self.reference.admissions,
@@ -319,6 +333,7 @@ class StreamPipelineRunner:
                 composite_risk=a.composite_risk,
                 detail=a.detail,
                 acknowledged=a.acknowledged,
+                scorer_version=self.scorer_version,
             )
             for a in out.alerts
         ]
@@ -344,6 +359,29 @@ class StreamPipelineRunner:
         )
 
     # ---------------------------------------------------------------- output
+
+    def _store_lab(self, lab: LabResult) -> None:
+        """Labs reach Cassandra through the stream, like everything else. Before this,
+        nothing wrote labs_by_patient and the API's labs endpoint was always empty."""
+        low, high = lab.reference_low, lab.reference_high
+        try:
+            self.dao.insert_lab_result(
+                LabResultRow(
+                    patient_id=lab.patient_id,
+                    test_type=lab.test_type.lower(),
+                    collected_at=lab.collected_at,
+                    result_value=Decimal(str(lab.result_value)),
+                    unit=lab.unit,
+                    reference_low=Decimal(str(low)) if low is not None else None,
+                    reference_high=Decimal(str(high)) if high is not None else None,
+                    out_of_range=lab.is_abnormal,
+                    sim_date=lab.collected_at.date(),
+                )
+            )
+            metrics.sink_writes_total.labels(table="labs_by_patient").inc()
+        except Exception as exc:
+            metrics.sink_write_errors_total.labels(table="labs_by_patient").inc()
+            log.warning("lab_write_failed", error=str(exc))
 
     def _vital_row(self, reading: VitalsReading) -> VitalReadingRow:
         present = [

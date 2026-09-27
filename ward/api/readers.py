@@ -200,12 +200,18 @@ async def read_patient_labs(dao: CassandraDAO, patient_id: str) -> list[LabResul
 
 
 async def read_ward_alerts(
-    dao: CassandraDAO, ward_id: str, alert_date: date, limit: int = 50
+    dao: CassandraDAO,
+    ward_id: str,
+    alert_date: date,
+    limit: int = 50,
+    version: str = "v1",
 ) -> list[AlertItem]:
-    """Retrieve active and recent alerts for a given day."""
+    """Retrieve active and recent alerts for a given day and scorer version."""
 
     def _sync_fetch() -> list[AlertRow]:
-        return dao.get_ward_alerts(ward_id=ward_id, alert_date=alert_date, limit=limit)
+        return dao.get_ward_alerts(
+            ward_id=ward_id, alert_date=alert_date, limit=limit, scorer_version=version
+        )
 
     rows = await asyncio.to_thread(_sync_fetch)
     return [
@@ -228,13 +234,22 @@ async def read_ward_alerts(
 
 
 async def update_alert_acknowledged(
-    dao: CassandraDAO, ward_id: str, alert_date: date, alert_time: datetime, alert_id: str
+    dao: CassandraDAO,
+    ward_id: str,
+    alert_date: date,
+    alert_time: datetime,
+    alert_id: str,
+    version: str = "v1",
 ) -> None:
     """Mark an alert acknowledged."""
 
     def _sync_ack() -> None:
         dao.acknowledge_alert(
-            ward_id=ward_id, alert_date=alert_date, alert_time=alert_time, alert_id=alert_id
+            ward_id=ward_id,
+            alert_date=alert_date,
+            alert_time=alert_time,
+            alert_id=alert_id,
+            scorer_version=version,
         )
 
     await asyncio.to_thread(_sync_ack)

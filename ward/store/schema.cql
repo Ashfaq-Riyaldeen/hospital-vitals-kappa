@@ -71,10 +71,13 @@ CREATE TABLE IF NOT EXISTS ward.ward_risk_snapshot (
 ) WITH CLUSTERING ORDER BY (risk_score DESC, patient_id ASC)
   AND default_time_to_live = 120;
 
-// Q4: Ward alert feed, partitioned by day to bound partition size
+// Q4: Ward alert feed, partitioned by day to bound partition size, and by scorer
+// version so a replay writes its alerts beside the live ones instead of into the
+// live ward's feed.
 CREATE TABLE IF NOT EXISTS ward.alerts_by_ward (
     ward_id                 text,
     sim_date                date,
+    scorer_version          text,
     alert_time              timestamp,
     alert_id                text,
     patient_id              text,
@@ -85,7 +88,7 @@ CREATE TABLE IF NOT EXISTS ward.alerts_by_ward (
     composite_risk          int,
     detail                  text,
     acknowledged            boolean,
-    PRIMARY KEY ((ward_id, sim_date), alert_time, alert_id)
+    PRIMARY KEY ((ward_id, sim_date, scorer_version), alert_time, alert_id)
 ) WITH CLUSTERING ORDER BY (alert_time DESC, alert_id ASC)
   AND default_time_to_live = 10800;
 

@@ -81,3 +81,23 @@ def test_evaluate_version_differences_synthetic() -> None:
     assert "Clinical Scorer Audit Diff: v1 vs v2" in md
     assert "Bit-Identical Control Proof" in md
     assert "PASSED (Zero difference)" in md
+
+
+def test_a_non_copd_change_or_an_upward_change_is_reported() -> None:
+    """The comparison must be able to FAIL: a changed control patient, or a COPD
+    score going up, are exactly what a clinical reviewer needs to see."""
+    now = datetime(2026, 4, 1, 12, 0, 0, tzinfo=UTC)
+    report = evaluate_version_differences(
+        trajectories_v1=[
+            _make_row("P031", "v1", now, composite=3, tier="LOW_MEDIUM"),
+            _make_row("P014", "v1", now, composite=7, tier="HIGH"),
+        ],
+        trajectories_v2=[
+            _make_row("P031", "v2", now, composite=4, tier="MEDIUM"),
+            _make_row("P014", "v2", now, composite=6, tier="MEDIUM"),
+        ],
+        copd_patient_ids={"P031"},
+    )
+    assert report.control_group_bit_identical is False
+    assert report.non_copd_evaluations_changed == 1
+    assert report.upward_changes == 1

@@ -89,6 +89,7 @@ class AlertRow:
     composite_risk: int
     detail: str
     acknowledged: bool
+    scorer_version: str = "v1"
 
 
 @dataclass(frozen=True)
@@ -174,10 +175,11 @@ class WardStoreDAO:
         # Q4: Ward alerts for a given day
         self._stmt_q4 = self.session.prepare(
             """
-            SELECT ward_id, sim_date, alert_time, alert_id, patient_id, bed_id,
-                   alert_type, severity, news2_total, composite_risk, detail, acknowledged
+            SELECT ward_id, sim_date, scorer_version, alert_time, alert_id, patient_id,
+                   bed_id, alert_type, severity, news2_total, composite_risk, detail,
+                   acknowledged
             FROM ward.alerts_by_ward
-            WHERE ward_id = ? AND sim_date = ?
+            WHERE ward_id = ? AND sim_date = ? AND scorer_version = ?
             LIMIT ?
             """
         )
@@ -256,9 +258,10 @@ class WardStoreDAO:
         self._stmt_insert_alert = self.session.prepare(
             """
             INSERT INTO ward.alerts_by_ward (
-                ward_id, sim_date, alert_time, alert_id, patient_id, bed_id,
-                alert_type, severity, news2_total, composite_risk, detail, acknowledged
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ward_id, sim_date, scorer_version, alert_time, alert_id, patient_id,
+                bed_id, alert_type, severity, news2_total, composite_risk, detail,
+                acknowledged
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
         )
 
@@ -266,7 +269,8 @@ class WardStoreDAO:
             """
             UPDATE ward.alerts_by_ward
             SET acknowledged = true
-            WHERE ward_id = ? AND sim_date = ? AND alert_time = ? AND alert_id = ?
+            WHERE ward_id = ? AND sim_date = ? AND scorer_version = ?
+              AND alert_time = ? AND alert_id = ?
             """
         )
 
@@ -399,8 +403,10 @@ class WardStoreDAO:
     # -------------------------------------------------------------------------
     # Q4: Ward alert feed
     # -------------------------------------------------------------------------
-    def get_ward_alerts(self, ward_id: str, alert_date: date, limit: int = 50) -> list[AlertRow]:
-        bound = self._stmt_q4.bind((ward_id, alert_date, limit))
+    def get_ward_alerts(
+        self, ward_id: str, alert_date: date, limit: int = 50, scorer_version: str = "v1"
+    ) -> list[AlertRow]:
+        bound = self._stmt_q4.bind((ward_id, alert_date, scorer_version, limit))
         rows = self.session.execute(bound)
         results: list[AlertRow] = []
         for r in rows:
@@ -418,14 +424,22 @@ class WardStoreDAO:
                     composite_risk=r.composite_risk,
                     detail=r.detail,
                     acknowledged=r.acknowledged,
+                    scorer_version=r.scorer_version,
                 )
             )
         return results
 
     def acknowledge_alert(
-        self, ward_id: str, alert_date: date, alert_time: datetime, alert_id: str
+        self,
+        ward_id: str,
+        alert_date: date,
+        alert_time: datetime,
+        alert_id: str,
+        scorer_version: str = "v1",
     ) -> None:
-        bound = self._stmt_ack_alert.bind((ward_id, alert_date, alert_time, alert_id))
+        bound = self._stmt_ack_alert.bind(
+            (ward_id, alert_date, scorer_version, alert_time, alert_id)
+        )
         self.session.execute(bound)
 
     # -------------------------------------------------------------------------
@@ -578,6 +592,7 @@ class WardStoreDAO:
             (
                 row.ward_id,
                 row.sim_date,
+                row.scorer_version,
                 row.alert_time,
                 row.alert_id,
                 row.patient_id,

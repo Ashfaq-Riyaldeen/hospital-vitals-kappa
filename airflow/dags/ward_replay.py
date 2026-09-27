@@ -6,21 +6,22 @@ means running a second instance of the stream processor from offset 0, computing
 a version difference, and pausing at a mandatory human governance gate.
 
 Workflow:
-    preflight_check          <- Verify Kafka retention covers horizon and record end offsets
+    preflight_check          <- record the log's start and end offsets per partition
            |
-    launch_replay_job        <- Run stream processor with SCORER_VERSION=v2 from earliest
+    confirm_replay_stream    <- ward-stream-v2 (started by `make replay`) is answering
            |
-    monitor_replay_progress  <- Poll consumer group lag and report progress percentage
+    wait_for_replay          <- its per-partition offsets pass the recorded end offsets
            |
-    verify_replay_complete   <- Assert replay consumer caught up to recorded end offset
+    compute_version_diff     <- compare every reading scored under both versions
            |
-    compute_version_diff     <- Query Cassandra to compare v1 and v2 clinical trajectories
+    check_expected_result    <- only COPD patients changed, and only downward
            |
-    publish_diff_report      <- Write validation artifact for clinical audit
+    await_human_approval     <- DELIBERATE STOPPING POINT: clinical sign-off
            |
-    await_human_approval     <- DELIBERATE STOPPING POINT: Clinical governance sign-off required
-           |
-    cutover_active_version   <- Downstream manual step to activate v2
+    cutover_active_version   <- manual, through the API (`make cutover`)
+
+The first version of this DAG printed "replay complete" and returned a hard-coded
+diff of "3 COPD reclassifications" without reading anything.
 
 Under Kappa architecture, Airflow only orchestrates. Replaying is done by the streaming
 processor itself reading the retained log, never by re-computing in Airflow.
@@ -29,14 +30,12 @@ processor itself reading the retained log, never by re-computing in Airflow.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any
 
 import pendulum
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowFailException
 from airflow.operators.empty import EmptyOperator
-from airflow.utils.trigger_rule import TriggerRule
 
 DEFAULT_ARGS = {
     "owner": "ward-governance",
@@ -77,74 +76,102 @@ def ward_replay() -> None:
         try:
             metadata = consumer.list_topics(topic, timeout=10)
             partitions = metadata.topics[topic].partitions
-            recorded_offsets: dict[int, int] = {}
+            starts: dict[str, int] = {}
+            ends: dict[str, int] = {}
             for p_id in partitions:
-                tp = TopicPartition(topic, p_id)
-                low, high = consumer.get_watermark_offsets(tp, timeout=10)
-                recorded_offsets[p_id] = high
+                low, high = consumer.get_watermark_offsets(TopicPartition(topic, p_id), timeout=10)
+                starts[str(p_id)], ends[str(p_id)] = low, high
             consumer.close()
             return {
                 "target_version": target_version,
                 "topic": topic,
-                "end_offsets": recorded_offsets,
+                "start_offsets": starts,
+                "end_offsets": ends,
                 "partition_count": len(partitions),
             }
         except Exception as exc:
             consumer.close()
             raise AirflowFailException(f"Preflight check failed to query Kafka: {exc}") from exc
 
-    @task
-    def launch_replay_job(preflight_meta: dict[str, Any]) -> str:
-        """Launch or verify the replay streaming processor container."""
-        print(
-            f"Launching replay streaming job for target version {preflight_meta['target_version']} "
-            f"across {preflight_meta['partition_count']} partitions"
+    @task(retries=3, retry_delay=pendulum.duration(seconds=20))
+    def confirm_replay_stream(preflight_meta: dict[str, Any]) -> str:
+        """The replay is ward-stream-v2 - the same pipeline, from offset 0, as v2.
+
+        It is started by `make replay` (docker compose, profile "replay"). Airflow
+        orchestrates; it does not run the stream. This step fails, and says why,
+        if the replay stream is not up.
+        """
+        import urllib.request
+
+        url = "http://ward-stream-v2:8105/health"
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                resp.read()
+        except OSError as exc:
+            raise AirflowFailException(
+                f"ward-stream-v2 is not answering at {url} ({exc}). Run `make replay`."
+            ) from exc
+        return str(preflight_meta["target_version"])
+
+    @task(execution_timeout=pendulum.duration(minutes=45))
+    def wait_for_replay(preflight_meta: dict[str, Any]) -> dict[str, Any]:
+        """Poll the v2 stream's per-partition offsets until it passes the end offsets
+        recorded at preflight. Progress is pushed to Prometheus as it goes."""
+        from datetime import UTC, datetime
+
+        from ward.replay.replay_runner import ReplayStatus, wait_for_replay
+
+        status = ReplayStatus(
+            target_version=preflight_meta["target_version"],
+            started_at=datetime.now(UTC),
+            end_offsets={int(k): v for k, v in preflight_meta["end_offsets"].items()},
+            start_offsets={int(k): v for k, v in preflight_meta["start_offsets"].items()},
         )
-        return preflight_meta["target_version"]
-
-    @task
-    def monitor_replay_progress(target_version: str) -> bool:
-        """Monitor consumer lag of the replay consumer group."""
-        print(f"Monitoring consumer group lag for ward-stream-{target_version}-replay")
-        return True
-
-    @task
-    def verify_replay_complete(replay_status: bool) -> bool:
-        """Assert replay processor has caught up to the target recorded offsets."""
-        print("Replay processing confirmed complete across all topic partitions")
-        return True
-
-    @task
-    def compute_version_diff(target_version: str) -> dict[str, Any]:
-        """Query Cassandra to evaluate divergence between v1 and v2 historical outcomes."""
-        diff_summary = {
-            "v1_version": "v1",
-            "v2_version": target_version,
-            "total_patients_compared": 40,
-            "copd_reclassifications": 3,
-            "notes": (
-                "COPD patients properly reclassified under SpO2 Scale 2; "
-                "persistent false alarm rate reduced without missing true deteriorations"
-            ),
+        wait_for_replay(status, "http://ward-stream-v2:8105/metrics", timeout_seconds=2400)
+        return {
+            "events": status.total_events,
+            "wait_seconds": status.duration_seconds,
         }
-        return diff_summary
 
     @task
-    def publish_diff_report(diff_summary: dict[str, Any]) -> str:
-        """Write the version comparison artifact for clinical audit."""
-        reports_dir = Path(os.environ.get("REPORTS_DIR", "/reports"))
-        reports_dir.mkdir(parents=True, exist_ok=True)
-        report_path = reports_dir / "replay_diff_v1_vs_v2.md"
+    def compute_version_diff(target_version: str, replay: dict[str, Any]) -> dict[str, Any]:
+        """Compare every reading scored under both versions, from Cassandra."""
+        from ward.replay.compare_versions import extract_ward_differences, generate_diff_artifacts
+        from ward.store.dao import WardStoreDAO
+        from ward.store.session import create_cluster, get_session
 
-        content = (
-            "# Clinical Scorer Version Comparison: v1 vs v2\n\n"
-            f"- Total Patients Evaluated: {diff_summary['total_patients_compared']}\n"
-            f"- COPD Scale 2 Adjustments: {diff_summary['copd_reclassifications']}\n"
-            f"- Clinical Finding: {diff_summary['notes']}\n"
-        )
-        report_path.write_text(content)
-        print(f"Diff report published: {report_path}")
-        return str(report_path)
+        cluster = create_cluster()
+        try:
+            dao = WardStoreDAO(get_session("ward", cluster=cluster))
+            report = extract_ward_differences(dao, "v1", target_version)
+        finally:
+            cluster.shutdown()
+        path = generate_diff_artifacts(report, os.environ.get("REPORTS_DIR", "/reports"))
+        summary = {
+            "report_path": str(path),
+            "evaluations": report.total_evaluations,
+            "changed": report.total_changed,
+            "copd_changed": report.copd_evaluations_changed,
+            "control_changed": report.non_copd_evaluations_changed,
+            "upward_changes": report.upward_changes,
+            "replayed_events": replay["events"],
+        }
+        print(summary)
+        return summary
+
+    @task
+    def check_expected_result(summary: dict[str, Any]) -> str:
+        """The expected answer is known before the replay: only COPD patients change,
+        and only downward. Anything else stops the run before anyone is asked to
+        approve a cutover."""
+        if summary["evaluations"] == 0:
+            raise AirflowFailException("no readings were scored under both versions")
+        if summary["control_changed"] or summary["upward_changes"]:
+            raise AirflowFailException(
+                f"unexpected changes: {summary['control_changed']} in non-COPD patients, "
+                f"{summary['upward_changes']} upward. See {summary['report_path']}."
+            )
+        return str(summary["report_path"])
 
     @task
     def await_human_approval(report_path: str) -> None:
@@ -161,14 +188,13 @@ def ward_replay() -> None:
     )
 
     preflight = preflight_check()
-    launched = launch_replay_job(preflight)
-    monitored = monitor_replay_progress(launched)
-    verified = verify_replay_complete(monitored)
-    diff = compute_version_diff(launched)
-    report = publish_diff_report(diff)
+    target = confirm_replay_stream(preflight)
+    replay = wait_for_replay(preflight)
+    diff = compute_version_diff(target, replay)
+    report = check_expected_result(diff)
     approval = await_human_approval(report)
 
-    preflight >> launched >> monitored >> verified >> diff >> report >> approval
+    target >> replay
     approval >> cutover_gate
 
 
