@@ -127,7 +127,15 @@ def ward_replay() -> None:
             end_offsets={int(k): v for k, v in preflight_meta["end_offsets"].items()},
             start_offsets={int(k): v for k, v in preflight_meta["start_offsets"].items()},
         )
-        wait_for_replay(status, "http://ward-stream-v2:8105/metrics", timeout_seconds=2400)
+        # Only the run that STARTS the replay knows how long it took. This check
+        # usually runs after it, against end offsets that keep moving with the live
+        # log, and once published "3 s" as the replay duration.
+        wait_for_replay(
+            status,
+            "http://ward-stream-v2:8105/metrics",
+            timeout_seconds=2400,
+            publish_duration=False,
+        )
         return {
             "events": status.total_events,
             "wait_seconds": status.duration_seconds,

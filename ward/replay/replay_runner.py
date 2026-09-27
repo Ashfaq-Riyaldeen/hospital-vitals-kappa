@@ -116,6 +116,7 @@ def wait_for_replay(
     metrics_url: str,
     poll_seconds: float = 2.0,
     timeout_seconds: float = 1800.0,
+    publish_duration: bool = True,
 ) -> ReplayStatus:
     """Poll the v2 stream until it has passed every recorded end offset."""
     deadline = time.monotonic() + timeout_seconds
@@ -143,7 +144,7 @@ def wait_for_replay(
         if status.is_complete:
             status.completed_at = datetime.now(UTC)
             final = {"replay_progress_pct": 100.0, "replay_events_remaining": 0.0}
-            if watched_catch_up:
+            if watched_catch_up and publish_duration:
                 # A check that starts after the replay has finished must not publish
                 # its own few milliseconds as "the replay took 25 ms" (seen when the
                 # Airflow run followed a replay started by `make replay`).
