@@ -64,12 +64,10 @@ class BedsideMonitors:
     def _reading(self, patient: Patient, sim_now: datetime) -> tuple[dict, str | None]:
         """Advance one patient and build their reading. Returns (payload, defect)."""
         patient.state = step(patient.state, patient.baseline, sim_now, self.rng)
-        patient.state = narratives.apply(
-            patient.state,
-            narratives.NarrativeContext(patient.patient_id, sim_now, self.clock.epoch_sim),
-        )
-
-        state, defect = defects.maybe_inject(patient.state, self.rng)
+        context = narratives.NarrativeContext(patient.patient_id, sim_now, self.clock.epoch_sim)
+        patient.state = narratives.apply(patient.state, context)
+        # Defects and P007's artefact touch the emitted reading, never the patient.
+        state, defect = defects.maybe_inject(narratives.emitted(patient.state, context), self.rng)
         measured_at = sim_now
         reading_id = str(uuid.uuid4())
 

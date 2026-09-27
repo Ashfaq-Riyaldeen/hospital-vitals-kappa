@@ -354,7 +354,28 @@ def test_trend_concerning_requires_high_confidence(
         sbp_slope=Decimal("-1.10"),  # adverse: falling
         temp_slope=Decimal("0.10"),  # adverse: rising
     )
+    scoring_news2 = News2Result(
+        total=3,
+        subscores={**base_news2_low.subscores, "heart_rate": 1, "systolic_bp": 1},
+        any_parameter_is_3=False,
+        clinical_risk="LOW",
+        parameters_missing=0,
+        scorer_version="v2",
+    )
     alerts = evaluate_clinical_alerts(
+        patient_id="P001",
+        bed_id="BED-01",
+        ward_id="WARD-A",
+        sim_date=date(2026, 4, 1),
+        alert_time=datetime(2026, 4, 1, 14, 0, tzinfo=UTC),
+        window_trend=trend_high_conf,
+        news2=scoring_news2,
+        composite=base_composite_low,
+    )
+    assert ALERT_TREND_CONCERNING in [a.alert_type for a in alerts]
+
+    # The same slopes in a patient scoring 0-2 are ordinary variation, not a concern.
+    calm = evaluate_clinical_alerts(
         patient_id="P001",
         bed_id="BED-01",
         ward_id="WARD-A",
@@ -364,7 +385,7 @@ def test_trend_concerning_requires_high_confidence(
         news2=base_news2_low,
         composite=base_composite_low,
     )
-    assert ALERT_TREND_CONCERNING in [a.alert_type for a in alerts]
+    assert ALERT_TREND_CONCERNING not in [a.alert_type for a in calm]
 
     # If confidence is low (< 4 readings), trend alert is suppressed
     trend_low_conf = WindowedVitalsTrend(
@@ -393,7 +414,39 @@ def test_trend_concerning_requires_high_confidence(
         sim_date=date(2026, 4, 1),
         alert_time=datetime(2026, 4, 1, 14, 0, tzinfo=UTC),
         window_trend=trend_low_conf,
-        news2=base_news2_low,
+        news2=scoring_news2,
         composite=base_composite_low,
     )
     assert ALERT_TREND_CONCERNING not in [a.alert_type for a in alerts_low_conf]
+
+
+def test_single_red_needs_two_readings_in_a_row(
+    base_window_trend: WindowedVitalsTrend,
+    base_composite_low: CompositeRiskResult,
+) -> None:
+    """P007's lone HR 145 scores 3. One such reading must not alert; two must."""
+    spike = News2Result(
+        total=4,
+        subscores={"heart_rate": 3, "respiratory_rate": 1},
+        any_parameter_is_3=True,
+        clinical_risk="LOW_MEDIUM",
+        parameters_missing=0,
+        scorer_version="v1",
+    )
+    kwargs: dict[str, object] = {
+        "patient_id": "P007",
+        "bed_id": "BED-07",
+        "ward_id": "WARD-A",
+        "sim_date": date(2026, 4, 1),
+        "alert_time": datetime(2026, 4, 1, 14, 0, tzinfo=UTC),
+        "window_trend": base_window_trend,
+        "news2": spike,
+        "composite": base_composite_low,
+        "prior_score_in_window": 1,
+        "previous_score": 1,
+    }
+
+    first = evaluate_clinical_alerts(**kwargs, previous_any_parameter_is_3=False)  # type: ignore[arg-type]
+    assert [a.alert_type for a in first] == []
+    second = evaluate_clinical_alerts(**kwargs, previous_any_parameter_is_3=True)  # type: ignore[arg-type]
+    assert ALERT_SINGLE_PARAM_RED in [a.alert_type for a in second]

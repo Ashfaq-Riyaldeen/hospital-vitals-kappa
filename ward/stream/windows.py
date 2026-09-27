@@ -41,28 +41,29 @@ class WindowedVitalsTrend:
 
 
 def calculate_slope(values: Sequence[float | None]) -> Decimal | None:
-    """Compute simple linear regression slope over sequential observations.
+    """Theil-Sen slope per observation: the median of all pairwise slopes.
+
+    Least squares was used first and P007 showed why it is wrong here. One heart rate
+    of 145 at the end of a flat 4-hour window drags a least-squares line up steeply
+    enough to count as a "rising trend" - the single-reading artefact that the trend
+    detector exists to ignore. The median of pairwise slopes barely moves for one
+    outlier, while a real climb (P014) moves every pair and so moves the median.
 
     Returns None if fewer than 2 valid points exist.
     """
     valid_points: list[tuple[int, float]] = [
         (idx, val) for idx, val in enumerate(values) if val is not None
     ]
-    n = len(valid_points)
-    if n < 2:
+    if len(valid_points) < 2:
         return None
 
-    sum_x = sum(x for x, _ in valid_points)
-    sum_y = sum(y for _, y in valid_points)
-    sum_xx = sum(x * x for x, _ in valid_points)
-    sum_xy = sum(x * y for x, y in valid_points)
-
-    denominator = (n * sum_xx) - (sum_x * sum_x)
-    if denominator == 0:
-        return Decimal("0.00")
-
-    numerator = (n * sum_xy) - (sum_x * sum_y)
-    slope = numerator / denominator
+    slopes = sorted(
+        (y2 - y1) / (x2 - x1)
+        for i, (x1, y1) in enumerate(valid_points)
+        for x2, y2 in valid_points[i + 1 :]
+    )
+    mid = len(slopes) // 2
+    slope = slopes[mid] if len(slopes) % 2 else (slopes[mid - 1] + slopes[mid]) / 2
     return Decimal(f"{slope:.3f}")
 
 

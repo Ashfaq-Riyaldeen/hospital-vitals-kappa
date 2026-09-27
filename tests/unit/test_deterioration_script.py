@@ -30,6 +30,7 @@ from ward.producers.physiology.narratives import (
     SPIKE_PATIENT,
     NarrativeContext,
     apply,
+    emitted,
 )
 from ward.producers.physiology.walk import VitalsState, step
 
@@ -188,10 +189,15 @@ def test_p007_spike_is_a_single_reading() -> None:
     elevated = 0
     for i in range(16):
         now = start + timedelta(minutes=i * 15)
+        ctx = NarrativeContext(SPIKE_PATIENT, now, EPOCH)
         state = step(state, baseline, now, rng)
-        state = apply(state, NarrativeContext(SPIKE_PATIENT, now, EPOCH))
-        if state.heart_rate >= 140:
+        state = apply(state, ctx)
+        # 131 bpm is where the heart-rate parameter starts scoring 3. The first
+        # version of this test used 140, which hid the walk carrying the spike on
+        # into the next reading at 132.
+        if emitted(state, ctx).heart_rate >= 131:
             elevated += 1
+        assert state.heart_rate < 131, "the spike leaked into the patient's state"
     assert elevated == 1, f"P007's spike covered {elevated} readings; it must cover exactly 1"
 
 

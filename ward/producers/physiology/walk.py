@@ -145,6 +145,12 @@ def step(state: VitalsState, baseline: Baseline, sim_time: datetime, rng: Random
     # and the injected-vs-rejected control would be worthless.
     diastolic = min(diastolic, systolic - 15)
 
+    # Saturation is a percentage. The walk around a 98 % baseline wanders past 100
+    # about 1 % of the time, and the validator rightly rejects 101 % as impossible -
+    # which put healthy patients in the DLQ and nearly doubled the dead-letter rate
+    # against the injected control. Same reasoning as the diastolic clamp above.
+    spo2 = min(spo2, 100.0)
+
     return replace(
         state,
         heart_rate=heart_rate,

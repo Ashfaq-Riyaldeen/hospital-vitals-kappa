@@ -141,7 +141,18 @@ def apply(state: VitalsState, ctx: NarrativeContext) -> VitalsState:
         # standard scale calls abnormal. The point is steadiness, not change.
         return replace(state, spo2=min(max(state.spo2, COPD_SPO2_LOW), COPD_SPO2_HIGH))
 
+    return state
+
+
+def emitted(state: VitalsState, ctx: NarrativeContext) -> VitalsState:
+    """What the monitor REPORTS, as opposed to what the patient IS.
+
+    P007's spike is a measurement artefact (a patient moving, a loose lead), so it is
+    applied to the emitted reading only and never written back into the patient's
+    state. It used to be written into the state, and the random walk then carried it
+    forward - 145, then 132, then 121 - so the "single" spike was really three
+    elevated readings and the next one still scored 3 for heart rate.
+    """
     if ctx.patient_id == SPIKE_PATIENT and _in_spike_window(ctx):
         return replace(state, heart_rate=SPIKE_HEART_RATE)
-
     return state

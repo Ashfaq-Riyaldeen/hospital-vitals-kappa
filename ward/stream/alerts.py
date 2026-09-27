@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Final
 
 from ward.clinical.composite_risk import CompositeRiskResult
@@ -54,9 +55,31 @@ class ClinicalAlert:
     acknowledged: bool = False
 
 
-def make_alert_id(patient_id: str, alert_type: str, window_start: datetime) -> str:
-    """Deterministic hash avoiding alert fatigue across sliding micro-batches."""
-    payload = f"{patient_id}:{alert_type}:{window_start.isoformat()}".encode()
+# A trend needs a real slope, not noise. Slopes are per observation (one reading per
+# 15 simulated minutes), so these are 4 bpm/h, 1 %/h, 4 mmHg/h and 0.2 C/h. Without a
+# floor, any upward wiggle in a stable patient's heart rate counts as "adverse" and the
+# alert fires for half the ward.
+TREND_HR_RISE_PER_OBS: Final[Decimal] = Decimal("1.0")
+TREND_SPO2_FALL_PER_OBS: Final[Decimal] = Decimal("-0.25")
+TREND_SBP_FALL_PER_OBS: Final[Decimal] = Decimal("-1.0")
+TREND_TEMP_RISE_PER_OBS: Final[Decimal] = Decimal("0.05")
+
+# Trend and rapid-rise alerts are for patients who are already scoring. A patient at
+# NEWS2 0-2 whose numbers drift is normal variation; the same drift at 3+ (trend) or a
+# climb that lands at 5+ (rapid) is the early warning these alerts exist for. Without
+# these floors, random drift alone put every bed on the ward into alert within a day.
+TREND_MIN_NEWS2: Final[int] = 3
+RAPID_MIN_NEWS2: Final[int] = 5
+
+
+def make_alert_id(patient_id: str, alert_type: str, episode_start: datetime) -> str:
+    """Deterministic id for one alert EPISODE.
+
+    Keyed on when the episode started, not on the current reading's window, so every
+    reading inside the same episode maps to the same id. A replayed log therefore
+    rewrites the same rows instead of adding new ones.
+    """
+    payload = f"{patient_id}:{alert_type}:{episode_start.isoformat()}".encode()
     return hashlib.sha1(payload).hexdigest()[:16]
 
 
@@ -71,9 +94,21 @@ def evaluate_clinical_alerts(
     composite: CompositeRiskResult,
     prior_score_in_window: int | None = None,
     copd_scale2: bool = False,
+    previous_score: int | None = None,
+    previous_any_parameter_is_3: bool | None = None,
 ) -> list[ClinicalAlert]:
-    """Evaluate 7 clinical alert conditions for one patient."""
+    """Evaluate 7 clinical alert conditions for one patient.
+
+    `previous_score` and `previous_any_parameter_is_3` describe the patient's reading
+    just before this one. When given, a single-parameter red and a rapid rise must hold
+    on two readings in a row before they fire. One odd reading (P007's lone heart-rate
+    spike) is far more often a moving patient or a loose lead than a real change, and
+    the next reading 15 simulated minutes later settles it. Leaving them as None keeps
+    the single-reading behaviour.
+    """
     alerts: list[ClinicalAlert] = []
+    red_confirmed = previous_any_parameter_is_3 is None or previous_any_parameter_is_3
+    sustained_score = news2.total if previous_score is None else min(news2.total, previous_score)
 
     # 1. NEWS2 High (>= 7)
     if news2.total >= 7:
@@ -111,7 +146,7 @@ def evaluate_clinical_alerts(
         )
 
     # 3. Single parameter red (any single parameter scores 3)
-    if news2.any_parameter_is_3 and news2.total < 7:
+    if news2.any_parameter_is_3 and red_confirmed and news2.total < 7:
         alerts.append(
             ClinicalAlert(
                 alert_id=make_alert_id(
@@ -152,8 +187,13 @@ def evaluate_clinical_alerts(
             )
         )
 
-    # 5. Rapid deterioration (score climbed >= 3 in 4 hours)
-    if prior_score_in_window is not None and (news2.total - prior_score_in_window) >= 3:
+    # 5. Rapid deterioration (score climbed >= 3 since the start of the 4-hour window,
+    #    and stayed up for two readings)
+    if (
+        prior_score_in_window is not None
+        and sustained_score >= RAPID_MIN_NEWS2
+        and (sustained_score - prior_score_in_window) >= 3
+    ):
         alerts.append(
             ClinicalAlert(
                 alert_id=make_alert_id(
@@ -196,15 +236,21 @@ def evaluate_clinical_alerts(
         )
 
     # 7. Trend concerning (>= 2 adverse slopes, confidence high)
-    if window_trend.confidence == "high":
+    if window_trend.confidence == "high" and news2.total >= TREND_MIN_NEWS2:
         adverse_count = 0
-        if window_trend.hr_slope is not None and window_trend.hr_slope > 0:
+        if window_trend.hr_slope is not None and window_trend.hr_slope >= TREND_HR_RISE_PER_OBS:
             adverse_count += 1
-        if window_trend.spo2_slope is not None and window_trend.spo2_slope < 0:
+        if (
+            window_trend.spo2_slope is not None
+            and window_trend.spo2_slope <= TREND_SPO2_FALL_PER_OBS
+        ):
             adverse_count += 1
-        if window_trend.sbp_slope is not None and window_trend.sbp_slope < 0:
+        if window_trend.sbp_slope is not None and window_trend.sbp_slope <= TREND_SBP_FALL_PER_OBS:
             adverse_count += 1
-        if window_trend.temp_slope is not None and window_trend.temp_slope > 0:
+        if (
+            window_trend.temp_slope is not None
+            and window_trend.temp_slope >= TREND_TEMP_RISE_PER_OBS
+        ):
             adverse_count += 1
 
         if adverse_count >= 2:
