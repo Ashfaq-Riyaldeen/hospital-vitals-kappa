@@ -16,9 +16,13 @@ route:
   repeat_interval: 2h
   receiver: "pipeline-oncall"
   routes:
+    # `continue: true` lets a safety alert go on to the next route as well. Without
+    # the catch-all route below it matched nothing further and never reached the
+    # on-call engineer (seen in the first outage test).
     - matchers: ['category="clinical_safety"']
       receiver: "ward-safety"
       continue: true
+    - receiver: "pipeline-oncall"
 
 receivers:
   - name: "pipeline-oncall"
