@@ -94,6 +94,67 @@ lab_join_hit_rate = Gauge(
     "lab_join_hit_rate", "Fraction of scores enriched with a fresh lab result."
 )
 admissions_refresh_total = Counter("admissions_refresh_total", "Admissions broadcast reloads.")
+lab_results_cached_total = Counter(
+    "lab_results_cached_total",
+    "Lab results read from the compacted labs topic into the stream's join cache.",
+)
+
+risk_scores_written_total = Counter(
+    "risk_scores_written_total",
+    "Risk scores produced by the stream, by scorer version and risk tier. Its RATE is "
+    "the heartbeat behind WardMonitoringSilent: when it drops to zero the ward screen "
+    "is showing nothing new, whatever else still looks healthy.",
+    ["scorer_version", "tier"],
+)
+patient_news2 = Gauge(
+    "patient_news2",
+    "Latest NEWS2 total per patient and scorer version. 40 patients x 2 versions is a "
+    "small, fixed label set, so a per-patient gauge is safe here.",
+    ["patient_id", "scorer_version"],
+)
+patient_composite_risk = Gauge(
+    "patient_composite_risk",
+    "Latest composite risk (NEWS2 plus lab contribution) per patient and scorer version.",
+    ["patient_id", "scorer_version"],
+)
+stream_end_to_end_seconds = Histogram(
+    "stream_end_to_end_seconds",
+    "REAL seconds from the monitor stamping ingest_time to the score being written to "
+    "Cassandra. This is what a nurse waits for.",
+    ["scorer_version"],
+    buckets=(0.5, 1, 2, 3, 5, 7.5, 10, 15, 20, 30, 60, 120, 300),
+)
+stream_batch_duration_seconds = Gauge(
+    "stream_batch_duration_seconds",
+    "Duration of the last Structured Streaming micro-batch, from the query listener.",
+    ["scorer_version"],
+)
+stream_batch_input_rows = Gauge(
+    "stream_batch_input_rows",
+    "Rows read by the last micro-batch.",
+    ["scorer_version"],
+)
+stream_last_progress_timestamp_seconds = Gauge(
+    "stream_last_progress_timestamp_seconds",
+    "Unix time of the last micro-batch progress event. Its age separates a dead query "
+    "from an idle one.",
+    ["scorer_version"],
+)
+stream_partition_offset = Gauge(
+    "stream_partition_offset",
+    "Next Kafka offset the stream will read, per partition. Structured Streaming keeps "
+    "offsets in its checkpoint, not in a consumer group, so this is how a replay's "
+    "progress is measured.",
+    ["scorer_version", "partition"],
+)
+serving_stale_labs_patients = Gauge(
+    "serving_stale_labs_patients",
+    "Patients whose latest score was made without fresh lab results.",
+)
+serving_mean_composite_risk = Gauge(
+    "serving_mean_composite_risk",
+    "Mean composite risk across the ward's current snapshot.",
+)
 
 # --- storage -------------------------------------------------------------
 

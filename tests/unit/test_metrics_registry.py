@@ -21,6 +21,10 @@ WARD_PREFIXES = (
     "sink_",
     "defects_",
     "admissions_",
+    "risk_",
+    "patient_",
+    "stream_",
+    "serving_",
 )
 
 

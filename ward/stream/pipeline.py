@@ -1,12 +1,14 @@
-"""The Single Stream Processing Pipeline.
+"""The single stream processing pipeline.
 
-Runs a long-lived PySpark Structured Streaming query or driver loop.
-Consumes bedside vitals, cleans physiological impossibilities,
-enriches with admissions reference data, computes 4-hour sliding trends,
-evaluates NEWS2 clinical scores, joins latest lab results for composite risk,
-generates deduplicated clinical alerts, and sinks to Cassandra.
+Reads bedside vitals from Kafka with PySpark Structured Streaming and, for every
+reading, decides (in `processor.py`) whether it is a duplicate, impossible, late or
+real; scores it with NEWS2; joins the latest lab results; raises new alerts; and
+writes everything to Cassandra.
 
-Under Kappa, this is the ONLY processing pipeline in the platform.
+Under Kappa this is the ONLY processing pipeline. The replay runs this same file with
+SCORER_VERSION=v2 and STARTING_OFFSETS=earliest - nothing else changes.
+
+I/O lives here; decisions live in `processor.py`, so they can be tested without Docker.
 """
 
 from __future__ import annotations
@@ -16,71 +18,164 @@ import json
 import os
 import signal
 import sys
+import threading
 import time
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 from types import FrameType
 from typing import Any
 from uuid import UUID
 
-from confluent_kafka import Consumer, KafkaError
+from confluent_kafka import Consumer, KafkaError, TopicPartition
 
 from ward import settings
-from ward.clinical.composite_risk import evaluate_composite_risk
-from ward.clinical.news2 import score_news2
 from ward.contracts.models import Admission, LabResult, VitalsReading
 from ward.contracts.serialization import deserialize, serialize_key, serialize_value
 from ward.obs import metrics
 from ward.obs.kafka_client import build_producer
 from ward.obs.log import configure, get_logger
+from ward.simclock import SimClock, read_anchor
 from ward.store.dao import (
     AlertRow,
-    DailyPatientSummaryRow,
     RiskScoreRow,
     VitalReadingRow,
     WardRiskSnapshotRow,
     WardStoreDAO,
 )
 from ward.store.session import create_cluster, get_session
-from ward.stream.alerts import evaluate_clinical_alerts
-from ward.stream.clean import validate_reading
-from ward.stream.enrich import enrich_reading
+from ward.stream.processor import (
+    KIND_DUPLICATE,
+    KIND_LATE,
+    KIND_REJECTED,
+    Outcome,
+    StreamProcessor,
+)
 from ward.stream.sinks import write_batch_data
-from ward.stream.windows import aggregate_window_trends
 
 log = get_logger()
 
 
-class StreamPipelineRunner:
-    """Coordinates stream consumption, transformation, and Cassandra persistence."""
+class ReferenceData:
+    """Keeps the admissions and lab caches current from their compacted topics.
 
-    def __init__(
-        self,
-        scorer_version: str = "v1",
-        consumer_group: str = "ward-stream-v1",
-    ) -> None:
+    The first version read both topics once, for two seconds, at start-up. Lab results
+    arrive once per simulated day, AFTER the stream has started, so the lab join never
+    saw a single result and the composite risk was always NEWS2 alone. Here one
+    consumer reads both topics to the end before scoring starts, then keeps reading on
+    a background thread for the life of the stream.
+    """
+
+    def __init__(self, k_cfg: settings.KafkaSettings, scorer_version: str) -> None:
+        self.k_cfg = k_cfg
+        self.admissions: dict[str, Admission] = {}
+        self.labs: dict[str, dict[str, LabResult]] = {}
+        self._consumer = Consumer(
+            {
+                "bootstrap.servers": k_cfg.bootstrap,
+                "group.id": f"ward-reference-{scorer_version}-{int(time.time())}",
+                "auto.offset.reset": "earliest",
+                "enable.auto.commit": False,
+            }
+        )
+        self._consumer.subscribe([k_cfg.admissions_topic, k_cfg.labs_topic])
+        self._running = True
+
+    def _apply(self, topic: str | None, value: bytes | None) -> None:
+        if not value or topic is None:
+            return
+        try:
+            if topic == self.k_cfg.admissions_topic:
+                adm = Admission(**deserialize(value, topic, schema_file="admission.avsc"))
+                self.admissions[adm.patient_id] = adm
+                metrics.admissions_refresh_total.inc()
+            else:
+                lab = LabResult(**deserialize(value, topic, schema_file="lab_result.avsc"))
+                self.labs.setdefault(lab.patient_id, {})[lab.test_type.lower()] = lab
+                metrics.lab_results_cached_total.inc()
+        except Exception as exc:
+            log.warning("reference_record_undecodable", topic=topic, error=str(exc))
+
+    def load_until_caught_up(self, timeout_seconds: float = 60.0) -> None:
+        deadline = time.monotonic() + timeout_seconds
+        ends: dict[tuple[str, int], int] = {}
+        while time.monotonic() < deadline:
+            msg = self._consumer.poll(0.5)
+            if msg is not None and not msg.error():
+                self._apply(msg.topic(), msg.value())
+            assignment = self._consumer.assignment()
+            if not assignment:
+                continue
+            if not ends:
+                for tp in assignment:
+                    _, high = self._consumer.get_watermark_offsets(tp, timeout=5)
+                    ends[(tp.topic, tp.partition)] = high
+            positions = self._consumer.position([TopicPartition(t, p) for (t, p) in ends])
+            if all(
+                tp.offset >= ends[(tp.topic, tp.partition)] or ends[(tp.topic, tp.partition)] == 0
+                for tp in positions
+            ):
+                break
+        log.info(
+            "reference_data_loaded",
+            admissions=len(self.admissions),
+            patients_with_labs=len(self.labs),
+        )
+
+    def follow(self) -> None:
+        def _loop() -> None:
+            while self._running:
+                msg = self._consumer.poll(1.0)
+                if msg is not None and not msg.error():
+                    self._apply(msg.topic(), msg.value())
+            self._consumer.close()
+
+        threading.Thread(target=_loop, daemon=True, name="reference-data").start()
+
+    def stop(self) -> None:
+        self._running = False
+
+
+def _clock() -> SimClock | None:
+    path = Path(os.environ.get("SIM_STATE_PATH", "/state/sim_epoch.json"))
+    try:
+        return read_anchor(path)
+    except FileNotFoundError:
+        log.warning("no_sim_clock_anchor", path=str(path), detail="future-timestamp check off")
+        return None
+
+
+class StreamPipelineRunner:
+    """Kafka in, Cassandra and Kafka out, around one StreamProcessor."""
+
+    def __init__(self, scorer_version: str = "v1", consumer_group: str = "ward-stream-v1") -> None:
         self.scorer_version = scorer_version
         self.consumer_group = consumer_group
         self.running = True
 
         self.k_cfg = settings.kafka()
         self.store_cfg = settings.storage()
-        self.sim_cfg = settings.sim()
         self.proc_cfg = settings.processing()
+        self.clock = _clock()
 
         self._cluster = create_cluster()
         self._session = get_session(keyspace=self.store_cfg.keyspace, cluster=self._cluster)
         self.dao = WardStoreDAO(self._session)
-
         self.producer = build_producer(f"stream-{scorer_version}")
 
-        self.admissions_cache: dict[str, Admission] = {}
-        self.labs_cache: dict[str, dict[str, LabResult]] = {}
-        self.window_history: dict[str, list[VitalsReading]] = {}
-        self.prior_scores: dict[str, int] = {}
+        self.reference = ReferenceData(self.k_cfg, scorer_version)
+        self.processor = StreamProcessor(
+            scorer_version=scorer_version,
+            admissions=self.reference.admissions,
+            labs=self.reference.labs,
+            window_hours=self.proc_cfg.trend_window_sim_hours,
+            min_readings_for_trend=self.proc_cfg.min_readings_for_trend,
+            watermark_minutes=self.proc_cfg.watermark_sim_minutes,
+        )
 
     def stop(self) -> None:
         self.running = False
+        self.reference.stop()
         log.info("stream_pipeline_stopping", scorer_version=self.scorer_version)
         try:
             self.producer.flush(timeout=5)
@@ -89,193 +184,78 @@ class StreamPipelineRunner:
         except Exception as exc:
             log.warning("error_during_shutdown", error=str(exc))
 
-    def load_reference_data(self) -> None:
-        """Load compacted admissions and lab reference topics into in-memory caches."""
-        conf = {
-            "bootstrap.servers": self.k_cfg.bootstrap,
-            "group.id": f"ref-loader-{self.scorer_version}-{int(time.time())}",
-            "auto.offset.reset": "earliest",
-            "enable.auto.commit": False,
-        }
-        consumer = Consumer(conf)
+    def start_reference_data(self) -> None:
+        self.reference.load_until_caught_up()
+        self.reference.follow()
 
+    # ------------------------------------------------------------ per record
+
+    def handle(self, raw: bytes, partition: int, offset: int) -> None:
+        """One Kafka record, start to finish."""
         try:
-            # 1. Admissions
-            consumer.subscribe([self.k_cfg.admissions_topic])
-            start_t = time.monotonic()
-            while time.monotonic() - start_t < 2.0:
-                msg = consumer.poll(0.2)
-                if msg is None:
-                    continue
-                if msg.error():
-                    break
-                val_bytes = msg.value()
-                if val_bytes:
-                    try:
-                        payload = deserialize(
-                            val_bytes,
-                            self.k_cfg.admissions_topic,
-                            url=self.k_cfg.schema_registry_url,
-                            schema_file="admission.avsc",
-                        )
-                        adm = Admission(**payload)
-                        self.admissions_cache[adm.patient_id] = adm
-                    except Exception as exc:
-                        log.debug("failed_to_decode_admission", error=str(exc))
-
-            # 2. Labs
-            consumer.subscribe([self.k_cfg.labs_topic])
-            start_t = time.monotonic()
-            while time.monotonic() - start_t < 2.0:
-                msg = consumer.poll(0.2)
-                if msg is None:
-                    continue
-                if msg.error():
-                    break
-                val_bytes = msg.value()
-                if val_bytes:
-                    try:
-                        payload = deserialize(
-                            val_bytes,
-                            self.k_cfg.labs_topic,
-                            url=self.k_cfg.schema_registry_url,
-                            schema_file="lab_result.avsc",
-                        )
-                        lab = LabResult(**payload)
-                        p_labs = self.labs_cache.setdefault(lab.patient_id, {})
-                        p_labs[lab.test_type] = lab
-                    except Exception as exc:
-                        log.debug("failed_to_decode_lab", error=str(exc))
+            payload = deserialize(raw, self.k_cfg.vitals_topic, schema_file="vitals_reading.avsc")
+            reading = VitalsReading(**payload)
         except Exception as exc:
-            log.warning("reference_cache_load_warning", error=str(exc))
-        finally:
-            consumer.close()
-
-        log.info(
-            "reference_data_cached",
-            admissions_count=len(self.admissions_cache),
-            patients_with_labs=len(self.labs_cache),
-        )
-
-    def process_reading(self, reading: VitalsReading, sim_now: datetime) -> None:
-        """Core streaming transformation on a single vital reading."""
-        # 1. Clean & validate against physiological bounds
-        is_valid, reject_reason, missing_count = validate_reading(reading, sim_now=sim_now)
-        if not is_valid:
             metrics.readings_validated_total.labels(result="rejected").inc()
-            metrics.readings_dlq_total.labels(
-                reason=reject_reason or "UNKNOWN", device_id=reading.device_id
-            ).inc()
-            # Forward invalid reading to DLQ topic
-            dlq_val = {
-                "original_payload": b"",
-                "rejection_reason": reject_reason or "UNKNOWN",
-                "rejection_detail": f"Physiological validation failed: {reject_reason}",
-                "validator": "ward.stream.clean",
-                "patient_id": reading.patient_id,
-                "device_id": reading.device_id,
-                "rejected_at_sim": int(reading.measured_at.timestamp() * 1000),
-                "rejected_at_real": int(datetime.now(UTC).timestamp() * 1000),
-                "source_topic": self.k_cfg.vitals_topic,
-                "source_partition": 0,
-                "source_offset": 0,
-                "trace_id": None,
-            }
-            try:
-                self.producer.produce(
-                    topic=self.k_cfg.dlq_topic,
-                    key=serialize_key(reading.patient_id, self.k_cfg.dlq_topic),
-                    value=serialize_value(
-                        dlq_val,
-                        self.k_cfg.dlq_topic,
-                        self.k_cfg.schema_registry_url,
-                        "dlq_envelope.avsc",
-                    ),
-                )
-                self.producer.poll(0)
-            except Exception as e:
-                log.warning("failed_to_produce_dlq", error=str(e))
+            metrics.readings_dlq_total.labels(reason="UNDECODABLE", device_id="unknown").inc()
+            self._dead_letter(raw, "UNDECODABLE", str(exc), None, None, None, partition, offset)
+            return
+
+        now = self.clock.sim_now() if self.clock else None
+        out = self.processor.process(reading, clock_now=now)
+
+        if out.kind == KIND_DUPLICATE:
+            metrics.readings_deduplicated_total.inc()
+            return
+        if out.kind == KIND_REJECTED:
+            reason = out.reason or "UNKNOWN"
+            metrics.readings_validated_total.labels(result="rejected").inc()
+            metrics.readings_dlq_total.labels(reason=reason, device_id=reading.device_id).inc()
+            self._dead_letter(
+                raw,
+                reason,
+                f"physiologically impossible reading: {reason}",
+                reading.patient_id,
+                reading.device_id,
+                reading.measured_at,
+                partition,
+                offset,
+            )
+            if out.summary is not None:
+                write_batch_data(self.dao, [], [], [], [], [out.summary])
+            return
+        if out.kind == KIND_LATE:
+            metrics.readings_late_total.inc()
+            self._produce(self.k_cfg.late_topic, reading.patient_id, raw)
+            write_batch_data(self.dao, [self._vital_row(reading)], [], [], [], [])
             return
 
         metrics.readings_validated_total.labels(result="valid").inc()
-
-        # 2. Enrich with admissions reference context
-        enriched, has_admission = enrich_reading(reading, self.admissions_cache)
-        if not has_admission:
+        if not out.has_admission:
             metrics.readings_without_admission_total.inc()
+        self._persist_outcome(out)
 
-        # 3. Maintain sliding window history (4 simulated hours)
-        history = self.window_history.setdefault(reading.patient_id, [])
-        history.append(reading)
-
-        # Prune readings older than 4 simulated hours
-        window_duration_seconds = self.proc_cfg.trend_window_sim_hours * 3600
-        cutoff = reading.measured_at.timestamp() - window_duration_seconds
-        self.window_history[reading.patient_id] = [
-            r for r in history if r.measured_at.timestamp() >= cutoff
-        ]
-        history = self.window_history[reading.patient_id]
-
-        window_start = datetime.fromtimestamp(cutoff, tz=UTC)
-        window_end = reading.measured_at
-
-        # 4. Compute window aggregates and slopes
-        trend = aggregate_window_trends(
-            patient_id=reading.patient_id,
-            readings=history,
-            window_start=window_start,
-            window_end=window_end,
-            min_readings_for_trend=self.proc_cfg.min_readings_for_trend,
+    def _persist_outcome(self, out: Outcome) -> None:
+        reading, news2, composite, trend, enriched = (
+            out.reading,
+            out.news2,
+            out.composite,
+            out.trend,
+            out.enriched,
         )
+        assert news2 is not None and composite is not None
+        assert trend is not None and enriched is not None
 
-        # 5. Score with NEWS2 (the ONE clinical rule)
-        news2_res = score_news2(
-            respiratory_rate=reading.respiratory_rate,
-            spo2=reading.spo2,
-            on_supplemental_oxygen=reading.on_supplemental_oxygen,
-            systolic_bp=reading.systolic_bp,
-            heart_rate=reading.heart_rate,
-            consciousness=reading.consciousness,
-            temperature=reading.temperature,
-            copd_scale2=enriched.copd_scale2,
-            version=self.scorer_version,
-        )
-
-        # 6. Join latest labs and evaluate composite risk
-        patient_labs = self.labs_cache.get(reading.patient_id, {})
-        composite_res = evaluate_composite_risk(
-            patient_id=reading.patient_id,
-            news2_total=news2_res.total,
-            labs=patient_labs,
-            as_of=reading.measured_at,
-        )
-
-        # 7. Evaluate clinical alerts
-        prior_score = self.prior_scores.get(reading.patient_id)
-        self.prior_scores[reading.patient_id] = news2_res.total
-
-        alerts = evaluate_clinical_alerts(
-            patient_id=reading.patient_id,
-            bed_id=reading.bed_id,
-            ward_id=enriched.ward_id,
-            sim_date=reading.measured_at.date(),
-            alert_time=reading.measured_at,
-            window_trend=trend,
-            news2=news2_res,
-            composite=composite_res,
-            prior_score_in_window=prior_score,
-            copd_scale2=enriched.copd_scale2,
-        )
-
-        for alert in alerts:
+        for alert in out.alerts:
             metrics.clinical_alerts_emitted_total.labels(
                 type=alert.alert_type, severity=alert.severity
             ).inc()
-            alert_dict = {
+            body = {
                 "alert_id": alert.alert_id,
                 "patient_id": alert.patient_id,
                 "bed_id": alert.bed_id,
                 "ward_id": alert.ward_id,
+                "scorer_version": self.scorer_version,
                 "sim_date": alert.sim_date.isoformat(),
                 "alert_time": alert.alert_time.isoformat(),
                 "alert_type": alert.alert_type,
@@ -283,37 +263,10 @@ class StreamPipelineRunner:
                 "news2_total": alert.news2_total,
                 "composite_risk": alert.composite_risk,
                 "detail": alert.detail,
-                "acknowledged": alert.acknowledged,
             }
-            try:
-                self.producer.produce(
-                    topic=self.k_cfg.alerts_topic,
-                    key=alert.patient_id.encode("utf-8"),
-                    value=json.dumps(alert_dict).encode("utf-8"),
-                )
-                self.producer.poll(0)
-            except Exception as e:
-                log.warning("failed_to_produce_alert", error=str(e))
-
-        # 8. Sink to Cassandra
-        vital_row = VitalReadingRow(
-            patient_id=reading.patient_id,
-            measured_at=reading.measured_at,
-            reading_id=UUID(reading.reading_id),
-            bed_id=reading.bed_id,
-            heart_rate=reading.heart_rate,
-            spo2=reading.spo2,
-            systolic_bp=reading.systolic_bp,
-            diastolic_bp=reading.diastolic_bp,
-            temperature=(
-                Decimal(str(reading.temperature)) if reading.temperature is not None else None
-            ),
-            respiratory_rate=reading.respiratory_rate,
-            consciousness=reading.consciousness,
-            on_supplemental_oxygen=reading.on_supplemental_oxygen,
-            parameters_missing=missing_count,
-            ingest_time=reading.ingest_time,
-        )
+            self._produce(
+                self.k_cfg.alerts_topic, alert.patient_id, json.dumps(body).encode("utf-8")
+            )
 
         score_row = RiskScoreRow(
             patient_id=reading.patient_id,
@@ -321,14 +274,14 @@ class StreamPipelineRunner:
             scored_at=reading.measured_at,
             window_start=trend.window_start,
             window_end=trend.window_end,
-            news2_total=news2_res.total,
-            news2_subscores=news2_res.subscores,
-            any_parameter_is_3=news2_res.any_parameter_is_3,
-            clinical_risk=news2_res.clinical_risk,
-            lab_contribution=composite_res.lab_contribution,
-            composite_risk=composite_res.composite_risk,
-            risk_tier=composite_res.risk_tier,
-            labs_stale=composite_res.labs_stale,
+            news2_total=news2.total,
+            news2_subscores=news2.subscores,
+            any_parameter_is_3=news2.any_parameter_is_3,
+            clinical_risk=news2.clinical_risk,
+            lab_contribution=composite.lab_contribution,
+            composite_risk=composite.composite_risk,
+            risk_tier=composite.risk_tier,
+            labs_stale=composite.labs_stale,
             confidence=trend.confidence,
             hr_slope=trend.hr_slope,
             spo2_slope=trend.spo2_slope,
@@ -336,24 +289,22 @@ class StreamPipelineRunner:
             temp_slope=trend.temp_slope,
             readings_in_window=trend.readings_in_window,
         )
-
         snap_row = WardRiskSnapshotRow(
             ward_id=enriched.ward_id,
             scorer_version=self.scorer_version,
-            risk_score=composite_res.composite_risk,
+            risk_score=composite.composite_risk,
             patient_id=reading.patient_id,
             bed_id=reading.bed_id,
-            risk_tier=composite_res.risk_tier,
-            news2_total=news2_res.total,
-            lab_contribution=composite_res.lab_contribution,
-            labs_stale=composite_res.labs_stale,
+            risk_tier=composite.risk_tier,
+            news2_total=news2.total,
+            lab_contribution=composite.lab_contribution,
+            labs_stale=composite.labs_stale,
             scored_at=reading.measured_at,
             hr_latest=trend.hr_latest,
             spo2_latest=trend.spo2_latest,
             sbp_latest=trend.sbp_latest,
             temp_latest=trend.temp_latest,
         )
-
         alert_rows = [
             AlertRow(
                 ward_id=a.ward_id,
@@ -369,90 +320,150 @@ class StreamPipelineRunner:
                 detail=a.detail,
                 acknowledged=a.acknowledged,
             )
-            for a in alerts
+            for a in out.alerts
         ]
-
-        summary_row = DailyPatientSummaryRow(
-            ward_id=enriched.ward_id,
-            sim_date=reading.measured_at.date(),
-            patient_id=reading.patient_id,
-            scorer_version=self.scorer_version,
-            bed_id=reading.bed_id,
-            admitting_condition=enriched.admitting_condition,
-            max_news2=news2_res.total,
-            mean_news2=Decimal(str(news2_res.total)),
-            max_composite_risk=composite_res.composite_risk,
-            final_risk_tier=composite_res.risk_tier,
-            lab_contribution=composite_res.lab_contribution,
-            labs_stale=composite_res.labs_stale,
-            alert_count=len(alerts),
-            highest_severity=alerts[0].severity if alerts else "NONE",
-            readings_count=1,
-            readings_rejected=0,
-            deterioration_detected=(news2_res.total >= 7 or len(alerts) > 0),
-        )
-
         write_batch_data(
             dao=self.dao,
-            vitals=[vital_row],
+            vitals=[self._vital_row(reading)],
             risk_scores=[score_row],
             snapshots=[snap_row],
             alerts=alert_rows,
-            summaries=[summary_row],
+            summaries=[out.summary] if out.summary else [],
         )
 
-    def run_consumer(self) -> None:
-        """Direct Kafka consumption loop (used when running standalone or locally)."""
-        self.load_reference_data()
+        v = self.scorer_version
+        metrics.risk_scores_written_total.labels(scorer_version=v, tier=composite.risk_tier).inc()
+        metrics.patient_news2.labels(patient_id=reading.patient_id, scorer_version=v).set(
+            news2.total
+        )
+        metrics.patient_composite_risk.labels(patient_id=reading.patient_id, scorer_version=v).set(
+            composite.composite_risk
+        )
+        metrics.stream_end_to_end_seconds.labels(scorer_version=v).observe(
+            max(0.0, time.time() - reading.ingest_time.timestamp())
+        )
 
-        conf = {
-            "bootstrap.servers": self.k_cfg.bootstrap,
-            "group.id": self.consumer_group,
-            "auto.offset.reset": "earliest",
-            "enable.auto.commit": True,
+    # ---------------------------------------------------------------- output
+
+    def _vital_row(self, reading: VitalsReading) -> VitalReadingRow:
+        present = [
+            reading.heart_rate,
+            reading.spo2,
+            reading.respiratory_rate,
+            reading.systolic_bp,
+            reading.temperature,
+            reading.consciousness,
+        ]
+        return VitalReadingRow(
+            patient_id=reading.patient_id,
+            measured_at=reading.measured_at,
+            reading_id=UUID(reading.reading_id),
+            bed_id=reading.bed_id,
+            heart_rate=reading.heart_rate,
+            spo2=reading.spo2,
+            systolic_bp=reading.systolic_bp,
+            diastolic_bp=reading.diastolic_bp,
+            temperature=(
+                Decimal(str(reading.temperature)) if reading.temperature is not None else None
+            ),
+            respiratory_rate=reading.respiratory_rate,
+            consciousness=reading.consciousness,
+            on_supplemental_oxygen=reading.on_supplemental_oxygen,
+            parameters_missing=sum(1 for x in present if x is None),
+            ingest_time=reading.ingest_time,
+        )
+
+    def _produce(self, topic: str, key: str, value: bytes) -> None:
+        try:
+            self.producer.produce(topic=topic, key=serialize_key(key, topic), value=value)
+            self.producer.poll(0)
+        except Exception as exc:
+            log.warning("produce_failed", topic=topic, error=str(exc))
+
+    def _dead_letter(
+        self,
+        raw: bytes,
+        reason: str,
+        detail: str,
+        patient_id: str | None,
+        device_id: str | None,
+        measured_at: datetime | None,
+        partition: int,
+        offset: int,
+    ) -> None:
+        """Dead-letter with the original bytes and exact log position, so the record
+        can be traced back and replayed. The first version sent an empty payload and
+        partition 0 / offset 0 for everything."""
+        now_ms = int(datetime.now(UTC).timestamp() * 1000)
+        envelope = {
+            "original_payload": raw,
+            "rejection_reason": reason,
+            "rejection_detail": detail,
+            "validator": "ward.stream.clean",
+            "patient_id": patient_id,
+            "device_id": device_id,
+            "rejected_at_sim": int(measured_at.timestamp() * 1000) if measured_at else now_ms,
+            "rejected_at_real": now_ms,
+            "source_topic": self.k_cfg.vitals_topic,
+            "source_partition": partition,
+            "source_offset": offset,
+            "trace_id": None,
         }
-        consumer = Consumer(conf)
+        try:
+            value = serialize_value(
+                envelope,
+                self.k_cfg.dlq_topic,
+                self.k_cfg.schema_registry_url,
+                "dlq_envelope.avsc",
+            )
+            self._produce(self.k_cfg.dlq_topic, patient_id or "unknown", value)
+        except Exception as exc:
+            log.warning("dlq_serialize_failed", error=str(exc))
+
+    # --------------------------------------------------------------- engines
+
+    def run_consumer(self) -> None:
+        """Plain Kafka consumer loop, for running outside Spark (local debugging)."""
+        self.start_reference_data()
+        consumer = Consumer(
+            {
+                "bootstrap.servers": self.k_cfg.bootstrap,
+                "group.id": self.consumer_group,
+                "auto.offset.reset": os.environ.get("STARTING_OFFSETS", "earliest"),
+                "enable.auto.commit": True,
+            }
+        )
         consumer.subscribe([self.k_cfg.vitals_topic])
-
         log.info("consumer_loop_started", topic=self.k_cfg.vitals_topic)
-
         try:
             while self.running:
                 msg = consumer.poll(1.0)
                 if msg is None:
                     continue
-                if msg.error():
-                    if msg.error().code() == KafkaError._PARTITION_EOF:
-                        continue
-                    log.error("consumer_error", error=str(msg.error()))
+                err = msg.error()
+                if err is not None:
+                    if err.code() != KafkaError._PARTITION_EOF:
+                        log.error("consumer_error", error=str(err))
                     continue
-
-                val_bytes = msg.value()
-                if not val_bytes:
-                    continue
-
-                try:
-                    payload = deserialize(
-                        val_bytes,
-                        self.k_cfg.vitals_topic,
-                        url=self.k_cfg.schema_registry_url,
-                        schema_file="vitals_reading.avsc",
-                    )
-                    reading = VitalsReading(**payload)
-                    self.process_reading(reading, sim_now=reading.measured_at)
-                except Exception as exc:
-                    log.error("reading_processing_error", error=str(exc))
+                value, partition, offset = msg.value(), msg.partition(), msg.offset()
+                if value and partition is not None and offset is not None:
+                    self.handle(value, partition, offset)
+                    metrics.stream_partition_offset.labels(
+                        scorer_version=self.scorer_version, partition=str(partition)
+                    ).set(offset + 1)
         finally:
             consumer.close()
 
     def run_spark(self) -> None:
-        """PySpark Structured Streaming query runner (used in the Spark app container)."""
+        """PySpark Structured Streaming: Kafka source, foreachBatch sink."""
         from pyspark.sql import SparkSession
+        from pyspark.sql.streaming import StreamingQueryListener
 
-        self.load_reference_data()
+        self.start_reference_data()
+        version = self.scorer_version
 
         spark = (
-            SparkSession.builder.appName(f"ward-stream-{self.scorer_version}")
+            SparkSession.builder.appName(f"ward-stream-{version}")
             .master("local[4]")
             .config("spark.sql.shuffle.partitions", "4")
             .config("spark.sql.session.timeZone", "UTC")
@@ -461,107 +472,119 @@ class StreamPipelineRunner:
         )
         spark.sparkContext.setLogLevel("WARN")
 
+        class _Progress(StreamingQueryListener):
+            """Spark has no scrape endpoint of its own, so the listener copies each
+            micro-batch's progress into this process's /metrics."""
+
+            def onQueryStarted(self, event: Any) -> None:  # noqa: N802
+                log.info("streaming_query_started", id=str(event.id), scorer_version=version)
+
+            def onQueryProgress(self, event: Any) -> None:  # noqa: N802
+                p = event.progress
+                metrics.stream_batch_duration_seconds.labels(scorer_version=version).set(
+                    p.batchDuration / 1000.0
+                )
+                metrics.stream_batch_input_rows.labels(scorer_version=version).set(p.numInputRows)
+                metrics.stream_last_progress_timestamp_seconds.labels(scorer_version=version).set(
+                    time.time()
+                )
+
+            def onQueryIdle(self, event: Any) -> None:  # noqa: N802
+                metrics.stream_last_progress_timestamp_seconds.labels(scorer_version=version).set(
+                    time.time()
+                )
+
+            def onQueryTerminated(self, event: Any) -> None:  # noqa: N802
+                log.error("streaming_query_terminated", exception=str(event.exception))
+
+        spark.streams.addListener(_Progress())
+
         df = (
             spark.readStream.format("kafka")
             .option("kafka.bootstrap.servers", self.k_cfg.bootstrap)
             .option("subscribe", self.k_cfg.vitals_topic)
-            .option("startingOffsets", "latest")
+            .option("startingOffsets", os.environ.get("STARTING_OFFSETS", "earliest"))
+            .option("maxOffsetsPerTrigger", os.environ.get("MAX_OFFSETS_PER_TRIGGER", "5000"))
             .option("failOnDataLoss", "false")
             .load()
+            .select("value", "partition", "offset")
         )
 
         def write_micro_batch(batch_df: Any, batch_id: int) -> None:
-            rows = batch_df.collect()
-            if not rows:
-                return
+            # Ordered per partition, so each patient's readings are handled in log
+            # order - the processor's windows and alert episodes depend on it.
+            rows = batch_df.orderBy("partition", "offset").collect()
+            last: dict[int, int] = {}
             for r in rows:
-                val = r.value
-                if not val:
-                    continue
-                try:
-                    payload = deserialize(
-                        val,
-                        self.k_cfg.vitals_topic,
-                        url=self.k_cfg.schema_registry_url,
-                        schema_file="vitals_reading.avsc",
-                    )
-                    reading = VitalsReading(**payload)
-                    self.process_reading(reading, sim_now=reading.measured_at)
-                except Exception as e:
-                    log.error("spark_batch_record_failed", error=str(e), batch_id=batch_id)
+                if r.value:
+                    self.handle(bytes(r.value), r.partition, r.offset)
+                last[r.partition] = r.offset
+            for partition, offset in last.items():
+                metrics.stream_partition_offset.labels(
+                    scorer_version=version, partition=str(partition)
+                ).set(offset + 1)
+            self.producer.flush(timeout=10)
 
         query = (
             df.writeStream.foreachBatch(write_micro_batch)
-            .trigger(processingTime="5 seconds")
-            .option("checkpointLocation", f"/checkpoints/ward-stream-{self.scorer_version}")
+            .trigger(processingTime=f"{self.proc_cfg.trigger_seconds} seconds")
+            .option("checkpointLocation", f"/checkpoints/ward-stream-{version}")
             .start()
         )
-
-        log.info("spark_structured_streaming_query_started", scorer_version=self.scorer_version)
+        log.info("spark_structured_streaming_query_started", scorer_version=version)
         query.awaitTermination()
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Ward Stream Processing Pipeline")
+    parser = argparse.ArgumentParser(description="Ward stream processing pipeline")
+    parser.add_argument("--scorer-version", default=os.environ.get("SCORER_VERSION", "v1"))
     parser.add_argument(
-        "--scorer-version",
-        default=os.environ.get("SCORER_VERSION", "v1"),
-        help="Clinical scorer version (v1 or v2)",
-    )
-    parser.add_argument(
-        "--consumer-group",
-        default=os.environ.get("CONSUMER_GROUP", "ward-stream-v1"),
-        help="Kafka consumer group ID",
+        "--consumer-group", default=os.environ.get("CONSUMER_GROUP", "ward-stream-v1")
     )
     parser.add_argument(
         "--engine",
         default=os.environ.get("STREAM_ENGINE", "auto"),
         choices=["auto", "spark", "consumer"],
-        help="Processing engine (spark, consumer, or auto)",
     )
     args = parser.parse_args()
 
     obs = settings.observability()
     configure(
         service=f"ward-stream-{args.scorer_version}",
-        stage="stream",
+        stage="process",
         level=obs.log_level,
         json_output=obs.log_json,
     )
-
     metrics.serve(port=obs.metrics_port)
     log.info(
         "stream_pipeline_started",
         scorer_version=args.scorer_version,
-        consumer_group=args.consumer_group,
         engine=args.engine,
+        starting_offsets=os.environ.get("STARTING_OFFSETS", "earliest"),
     )
 
-    runner = StreamPipelineRunner(
-        scorer_version=args.scorer_version,
-        consumer_group=args.consumer_group,
-    )
+    runner = StreamPipelineRunner(args.scorer_version, args.consumer_group)
 
     def _sig_handler(sig: int, frame: FrameType | None) -> None:
         runner.stop()
+        sys.exit(0)
 
     signal.signal(signal.SIGINT, _sig_handler)
     signal.signal(signal.SIGTERM, _sig_handler)
 
-    has_spark = False
-    if args.engine in ("auto", "spark"):
+    use_spark = args.engine == "spark"
+    if args.engine == "auto":
         try:
             import pyspark  # noqa: F401
 
-            has_spark = True
+            use_spark = True
         except ImportError:
-            has_spark = False
+            use_spark = False
 
-    if args.engine == "spark" or (args.engine == "auto" and has_spark):
+    if use_spark:
         runner.run_spark()
     else:
         runner.run_consumer()
-
     return 0
 
 

@@ -157,7 +157,7 @@ test: ## Unit and contract tests (no Docker needed)
 lint: ## ruff + format check + mypy on the strict modules
 	.venv/bin/ruff check ward tests scripts
 	.venv/bin/ruff format --check ward tests scripts
-	.venv/bin/mypy ward/clinical ward/simclock.py ward/store/dao.py
+	.venv/bin/mypy ward/clinical ward/simclock.py ward/store/dao.py ward/stream
 
 .PHONY: fmt
 fmt: ## Auto-format
