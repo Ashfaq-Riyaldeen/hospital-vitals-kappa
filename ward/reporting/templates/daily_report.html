@@ -241,7 +241,7 @@
     {% for item in critical_highlights %}
       <div class="narrative-box {% if item.is_critical %}critical-narrative{% endif %}">
         <div class="narrative-title">
-          Bed {{ item.bed_id }} (Patient {{ item.patient_id }}) &mdash; {{ item.admitting_condition }}
+          Bed {{ item.bed_id }}, patient {{ item.patient_id }} ({{ item.admitting_condition }})
           {% if item.deterioration_detected %}
             <span class="badge-deterioration">RAPID DETERIORATION</span>
           {% endif %}
