@@ -94,22 +94,47 @@ def mock_summary_rows() -> list[DailyPatientSummaryRow]:
     ]
 
 
-def test_build_clinical_narratives_extracts_scripted_patients(
+def test_narratives_come_from_the_numbers(
     mock_summary_rows: list[DailyPatientSummaryRow],
 ) -> None:
-    highlights = build_clinical_narratives(mock_summary_rows)
-    patient_ids = [h.patient_id for h in highlights]
-    assert "P014" in patient_ids
-    assert "P031" in patient_ids
+    highlights = {h.patient_id: h for h in build_clinical_narratives(mock_summary_rows)}
+    # P014 deteriorated; P008 reached NEWS2 5. P031 (peak 4, no deterioration) and the
+    # calm patient need no call-out.
+    assert set(highlights) == {"P014", "P008"}
 
-    p014_h = next(h for h in highlights if h.patient_id == "P014")
-    assert p014_h.is_critical is True
-    assert p014_h.deterioration_detected is True
-    assert "ICU review required" in p014_h.narrative
-    assert "hyperlactatemia" in p014_h.narrative
+    p014 = highlights["P014"]
+    assert p014.is_critical is True
+    assert "NEWS2 7" in p014.narrative
+    assert "Lab results added 3" in p014.narrative
+    assert "emergency" in p014.narrative
 
-    p031_h = next(h for h in highlights if h.patient_id == "P031")
-    assert "Scale 2" in p031_h.narrative
+    p008 = highlights["P008"]
+    assert p008.is_critical is False
+    assert "urgent" in p008.narrative
+
+
+def test_no_scripted_text_whatever_the_data() -> None:
+    """The old renderer claimed hyperlactatemia for P014 even on a calm day."""
+    calm = DailyPatientSummaryRow(
+        ward_id="WARD-A",
+        sim_date=date(2026, 4, 1),
+        patient_id="P014",
+        scorer_version="v1",
+        bed_id="BED-14",
+        admitting_condition="sepsis_risk",
+        max_news2=2,
+        mean_news2=Decimal("1.0"),
+        max_composite_risk=2,
+        final_risk_tier="LOW",
+        lab_contribution=0,
+        labs_stale=False,
+        alert_count=0,
+        highest_severity="NONE",
+        readings_count=96,
+        readings_rejected=0,
+        deterioration_detected=False,
+    )
+    assert build_clinical_narratives([calm]) == []
 
 
 def test_render_from_rows_generates_html_and_pdf(

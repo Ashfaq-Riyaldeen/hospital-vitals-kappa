@@ -23,6 +23,8 @@ from ward.store.session import create_cluster, get_session
 log = get_logger()
 
 TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+URGENT_NEWS2 = 5
+EMERGENCY_NEWS2 = 7
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,68 +39,44 @@ class NarrativeHighlight:
 
 
 def build_clinical_narratives(rows: Sequence[DailyPatientSummaryRow]) -> list[NarrativeHighlight]:
-    """Generate clinical callout narratives for deteriorating or notable patients."""
+    """One plain sentence or three for each patient who needed attention that day.
+
+    Built only from the numbers in the summary row. The first version wrote fixed
+    text for P014 ("hyperlactatemia ... ICU review required") and P031 ("Scale 2
+    accommodated ...") whatever the data said - including under v1, which does not
+    use Scale 2 at all.
+    """
     highlights: list[NarrativeHighlight] = []
-
     for r in rows:
-        # Scripted patient P014: Sepsis narrative
-        if r.patient_id == "P014":
-            narrative = (
-                f"Severe deterioration detected: Bed {r.bed_id} escalated to NEWS2 {r.max_news2} "
-                f"and composite risk {r.max_composite_risk} ({r.final_risk_tier}). Lab pathology "
-                f"contributed +{r.lab_contribution} points driven by acute hyperlactatemia and "
-                "marked leukocytosis, corroborating clinical septic shock. "
-                "Immediate ICU review required."
+        if not (r.deterioration_detected or r.max_news2 >= URGENT_NEWS2):
+            continue
+        parts = [
+            f"Bed {r.bed_id} ({r.admitting_condition}) reached NEWS2 {r.max_news2} and "
+            f"composite risk {r.max_composite_risk}; the day ended at {r.final_risk_tier}."
+        ]
+        if r.lab_contribution:
+            parts.append(f"Lab results added {r.lab_contribution} to the latest score.")
+        elif r.labs_stale:
+            parts.append("No fresh lab results were available, so vitals alone were scored.")
+        if r.alert_count:
+            parts.append(
+                f"{r.alert_count} alert episode(s), highest severity {r.highest_severity}."
             )
-            highlights.append(
-                NarrativeHighlight(
-                    patient_id=r.patient_id,
-                    bed_id=r.bed_id,
-                    admitting_condition=r.admitting_condition,
-                    max_composite=r.max_composite_risk,
-                    is_critical=True,
-                    deterioration_detected=True,
-                    narrative=narrative,
-                )
+        if r.max_news2 >= EMERGENCY_NEWS2:
+            parts.append("NEWS2 of 7 or more calls for an emergency clinical response.")
+        elif r.max_news2 >= URGENT_NEWS2:
+            parts.append("NEWS2 of 5 or more calls for an urgent clinical review.")
+        highlights.append(
+            NarrativeHighlight(
+                patient_id=r.patient_id,
+                bed_id=r.bed_id,
+                admitting_condition=r.admitting_condition,
+                max_composite=r.max_composite_risk,
+                is_critical=r.max_news2 >= EMERGENCY_NEWS2 or r.max_composite_risk >= 10,
+                deterioration_detected=r.deterioration_detected,
+                narrative=" ".join(parts),
             )
-        # Scripted patient P031: COPD narrative
-        elif r.patient_id == "P031":
-            narrative = (
-                f"Hypercapnic respiratory baseline: Bed {r.bed_id} maintained peak NEWS2 "
-                f"{r.max_news2} with composite risk {r.max_composite_risk} ({r.final_risk_tier}). "
-                "SpO2 Scale 2 properly accommodated chronic hypoxia (target 88-92%), "
-                "suppressing false alarms."
-            )
-            highlights.append(
-                NarrativeHighlight(
-                    patient_id=r.patient_id,
-                    bed_id=r.bed_id,
-                    admitting_condition=r.admitting_condition,
-                    max_composite=r.max_composite_risk,
-                    is_critical=r.max_composite_risk >= 10,
-                    deterioration_detected=r.deterioration_detected,
-                    narrative=narrative,
-                )
-            )
-        # Other deteriorating patients
-        elif r.deterioration_detected and r.patient_id not in ("P014", "P031"):
-            narrative = (
-                f"Rapid vital sign trajectory: Bed {r.bed_id} triggered {r.alert_count} alerts "
-                f"with peak NEWS2 {r.max_news2} and composite risk {r.max_composite_risk}. "
-                f"Highest alert severity: {r.highest_severity}."
-            )
-            highlights.append(
-                NarrativeHighlight(
-                    patient_id=r.patient_id,
-                    bed_id=r.bed_id,
-                    admitting_condition=r.admitting_condition,
-                    max_composite=r.max_composite_risk,
-                    is_critical=r.max_composite_risk >= 10,
-                    deterioration_detected=True,
-                    narrative=narrative,
-                )
-            )
-
+        )
     return highlights
 
 
@@ -221,7 +199,7 @@ def main() -> int:
     obs = settings.observability()
     configure(
         service="report-renderer",
-        stage="serving",
+        stage="serve",
         level=obs.log_level,
         json_output=obs.log_json,
     )
