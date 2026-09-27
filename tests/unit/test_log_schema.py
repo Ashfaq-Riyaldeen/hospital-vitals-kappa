@@ -53,3 +53,21 @@ def test_the_guard_runs_first_in_the_chain() -> None:
     assert "structlog.processors." not in before, (
         "a processor is registered before the reserved-field guard; the guard must be first"
     )
+
+
+def test_a_logger_created_before_configure_still_writes_json(capsys) -> None:
+    """Services create `log = get_logger()` at import time, before configure()."""
+    import json
+
+    import structlog
+    from ward.obs.log import configure, get_logger
+
+    structlog.reset_defaults()
+    early = get_logger(component="early")
+    configure(service="test", stage="process", json_output=True, cache=False)
+    early.info("hello")
+    line = capsys.readouterr().out.strip().splitlines()[-1]
+    record = json.loads(line)
+    assert record["event"] == "hello"
+    assert record["component"] == "early"
+    assert record["stage"] == "process"

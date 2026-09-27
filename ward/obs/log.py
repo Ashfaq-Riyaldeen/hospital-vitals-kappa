@@ -126,7 +126,11 @@ def get_logger(**initial: Any) -> Any:
     Bind `correlation_id` to the entity a component is about — `vehicle_id` here —
     so one vehicle's journey can be grepped across every service.
     """
-    return structlog.get_logger().bind(**initial)
+    # Must stay LAZY. Modules call this at import time, before configure() runs.
+    # `structlog.get_logger().bind(...)` resolved the logger immediately with
+    # structlog's default console renderer, so every module-level logger ignored the
+    # JSON configuration and the containers printed plain text.
+    return structlog.get_logger(**initial)
 
 
 # structlog and our own processors own these keys. Passing one as a kwarg silently
