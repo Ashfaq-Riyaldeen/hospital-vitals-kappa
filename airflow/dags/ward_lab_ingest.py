@@ -35,7 +35,7 @@ from typing import Any
 
 import pendulum
 from airflow.decorators import dag, task
-from airflow.exceptions import AirflowFailException
+from airflow.exceptions import AirflowFailException, AirflowSkipException
 from airflow.utils.trigger_rule import TriggerRule
 
 LAB_DROP_HOUR = 6
@@ -51,7 +51,7 @@ DEFAULT_ARGS = {
 
 @dag(
     dag_id="ward_lab_ingest",
-    description="Daily pathology result ingestion: sense, verify, validate, and publish verbatim to Kafka",
+    description="Daily lab file: verify checksum, validate, publish to Kafka or quarantine",
     schedule="*/5 * * * *",
     start_date=pendulum.datetime(2026, 4, 1, tz="UTC"),
     catchup=False,
@@ -81,6 +81,9 @@ def ward_lab_ingest() -> None:
         # day whose drop time (plus two hours' grace for a late file) has passed
         # picks up each file exactly once.
         ready = clock.sim_now() - timedelta(hours=LAB_DROP_HOUR + LATE_GRACE_HOURS)
+        if ready.date() < clock.epoch_sim.date():
+            # Before the first file of the simulation is due: nothing to do, not a failure.
+            raise AirflowSkipException("no lab file is due yet")
         return ready.date().isoformat()
 
     @task

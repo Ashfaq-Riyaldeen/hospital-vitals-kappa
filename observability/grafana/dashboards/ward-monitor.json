@@ -237,7 +237,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "serving_mean_composite_risk",
+          "expr": "serving_mean_composite_risk{job=\"ward-api\"}",
           "legendFormat": "",
           "instant": false,
           "range": true
@@ -301,7 +301,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "serving_stale_labs_patients",
+          "expr": "serving_stale_labs_patients{job=\"ward-api\"}",
           "legendFormat": "",
           "instant": false,
           "range": true
@@ -429,7 +429,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "patient_composite_risk{scorer_version=\"v1\"}",
+          "expr": "sum by (patient_id) (patient_composite_risk{scorer_version=\"v1\"})",
           "legendFormat": "composite",
           "instant": true,
           "range": false,
@@ -441,7 +441,7 @@
             "type": "prometheus",
             "uid": "ward-prom"
           },
-          "expr": "patient_news2{scorer_version=\"v1\"}",
+          "expr": "sum by (patient_id) (patient_news2{scorer_version=\"v1\"})",
           "legendFormat": "news2",
           "instant": true,
           "range": false,
@@ -483,11 +483,7 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "instance": true,
-              "job": true,
-              "scorer_version": true
+              "Time": true
             },
             "renameByName": {
               "patient_id": "Patient",

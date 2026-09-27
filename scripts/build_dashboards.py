@@ -180,7 +180,7 @@ def ward_monitor() -> None:
         "stat",
         "Mean composite risk",
         "Average of NEWS2 plus lab contribution across the ward snapshot (from the API).",
-        [("serving_mean_composite_risk", "")],
+        [('serving_mean_composite_risk{job="ward-api"}', "")],
         4,
         4,
         decimals=2,
@@ -192,7 +192,7 @@ def ward_monitor() -> None:
         "Scored without fresh labs",
         "Patients whose latest score used vitals only, because no lab result from the "
         "last two simulated days was available.",
-        [("serving_stale_labs_patients", "")],
+        [('serving_stale_labs_patients{job="ward-api"}', "")],
         4,
         4,
         options=STAT_OPTS,
@@ -216,8 +216,10 @@ def ward_monitor() -> None:
         "One row per bed, sorted by composite risk. NEWS2 is the bedside score; the "
         "difference is what the latest labs add.",
         [
-            (f"patient_composite_risk{{{v}}}", "composite"),
-            (f"patient_news2{{{v}}}", "news2"),
+            # sum by (patient_id) drops __name__ and the scrape labels, so the two
+            # series share one row per patient when Grafana merges them.
+            (f"sum by (patient_id) (patient_composite_risk{{{v}}})", "composite"),
+            (f"sum by (patient_id) (patient_news2{{{v}}})", "news2"),
         ],
         10,
         17,
@@ -227,13 +229,7 @@ def ward_monitor() -> None:
             {
                 "id": "organize",
                 "options": {
-                    "excludeByName": {
-                        "Time": True,
-                        "__name__": True,
-                        "instance": True,
-                        "job": True,
-                        "scorer_version": True,
-                    },
+                    "excludeByName": {"Time": True},
                     "renameByName": {
                         "patient_id": "Patient",
                         "Value #A": "Composite risk",

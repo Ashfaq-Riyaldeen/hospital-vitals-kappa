@@ -29,7 +29,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-
 def create_cluster(
     hosts: list[str] | str | None = None,
     port: int | None = None,

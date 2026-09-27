@@ -75,7 +75,7 @@ groups:
           description: "A service is down or its metrics endpoint is not answering."
 
       - alert: StaleLabDataElevated
-        expr: serving_stale_labs_patients > 10
+        expr: serving_stale_labs_patients{job="ward-api"} > 10
         for: 5m
         labels:
           severity: warning

@@ -20,3 +20,4 @@ labs/inbox/.tmp/
 *.synctex.gz
 *.out
 *.toc
+labs/quarantine/
