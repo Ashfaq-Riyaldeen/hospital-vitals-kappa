@@ -29,7 +29,7 @@ import hashlib
 import json
 import os
 import shutil
-from datetime import UTC, datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,9 @@ import pendulum
 from airflow.decorators import dag, task
 from airflow.exceptions import AirflowFailException
 from airflow.utils.trigger_rule import TriggerRule
+
+LAB_DROP_HOUR = 6
+LATE_GRACE_HOURS = 2
 
 DEFAULT_ARGS = {
     "owner": "ward-clinician",
@@ -71,7 +74,14 @@ def ward_lab_ingest() -> None:
         if not state_path.exists():
             return "2026-04-01"
         clock = read_anchor(state_path)
-        return clock.sim_date().isoformat()
+        # The lab drops each day's file at 06:00 simulated, and this DAG runs every
+        # 5 real minutes - one simulated day - at a phase unrelated to the simulated
+        # clock. Asking for "today" failed every run that landed before 06:00, and then
+        # every run after it, because the phase never changes. Asking for the latest
+        # day whose drop time (plus two hours' grace for a late file) has passed
+        # picks up each file exactly once.
+        ready = clock.sim_now() - timedelta(hours=LAB_DROP_HOUR + LATE_GRACE_HOURS)
+        return ready.date().isoformat()
 
     @task
     def verify_checksum(sim_date: str) -> str:
@@ -162,6 +172,11 @@ def ward_lab_ingest() -> None:
         payload = json.loads(lab_file.read_text())
         results = payload.get("results", [])
 
+        from ward.simclock import read_anchor
+
+        sim_now = read_anchor(
+            Path(os.environ.get("SIM_STATE_PATH", "/state/sim_epoch.json"))
+        ).sim_now()
         kafka_cfg = settings.kafka()
         producer = Producer({"bootstrap.servers": kafka_cfg.bootstrap})
         topic = "labs.results.v1"
@@ -172,7 +187,9 @@ def ward_lab_ingest() -> None:
             ref_low, ref_high = ref_range.low, ref_range.high
             collected_dt = datetime.fromisoformat(r["collected_at"].replace("Z", "+00:00"))
             collected_ms = int(collected_dt.timestamp() * 1000)
-            reported_ms = int(datetime.now(UTC).timestamp() * 1000)
+            # Reported on the SIMULATED clock. Real time here made every lab look
+            # months newer than the readings it was joined to, so it never went stale.
+            reported_ms = int(sim_now.timestamp() * 1000)
 
             record = {
                 "patient_id": r["patient_id"],

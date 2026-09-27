@@ -121,3 +121,37 @@ def test_insert_vital_reading_binds_correct_fields() -> None:
 
     dao.insert_vital_reading(reading)
     session.execute.assert_called_once()
+
+
+def test_ward_snapshot_shows_a_recovered_patient_at_their_current_score() -> None:
+    """The case the first version got wrong: the newest row is NOT the highest.
+
+    Rows come back risk-descending, so keeping the first row per patient kept their
+    worst recent score. A patient who improved from 10 to 3 stayed at the top of the
+    ward screen, in red, for as long as the old row lived.
+    """
+    session = _make_mock_session()
+    dao = WardStoreDAO(session)
+
+    def row(pid: str, score: int, minute: int) -> MagicMock:
+        return MagicMock(
+            ward_id="WARD-A",
+            scorer_version="v1",
+            risk_score=score,
+            patient_id=pid,
+            bed_id=f"BED-{pid[1:]}",
+            risk_tier="LOW",
+            news2_total=score,
+            lab_contribution=0,
+            labs_stale=False,
+            scored_at=datetime(2026, 4, 1, 10, minute, tzinfo=UTC),
+            hr_latest=80,
+            spo2_latest=96,
+            sbp_latest=120,
+            temp_latest=Decimal("37.0"),
+        )
+
+    # Risk-descending, as Cassandra returns them.
+    session.execute.return_value = [row("P014", 10, 0), row("P031", 7, 30), row("P014", 3, 30)]
+    snapshot = dao.get_ward_risk_snapshot(ward_id="WARD-A", scorer_version="v1")
+    assert [(r.patient_id, r.risk_score) for r in snapshot] == [("P031", 7), ("P014", 3)]

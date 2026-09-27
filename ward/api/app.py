@@ -45,10 +45,11 @@ from ward.api.readers import (
     read_ward_summary,
     update_alert_acknowledged,
 )
+from ward.obs import metrics
 from ward.obs.log import configure, get_logger
 from ward.simclock import read_anchor, utcnow
 from ward.store.dao import CassandraDAO
-from ward.store.session import get_cluster
+from ward.store.session import create_cluster, get_session
 
 log = get_logger()
 
@@ -57,19 +58,25 @@ log = get_logger()
 async def lifespan(app: FastAPI):
     """Lifecycle manager configuring Cassandra DAO connection pool and structured logging."""
     obs = settings.observability()
-    configure(service="ward-api", stage="serving", level=obs.log_level, json_output=obs.log_json)
+    configure(service="ward-api", stage="serve", level=obs.log_level, json_output=obs.log_json)
 
     store_cfg = settings.store()
     cluster = None
     session = None
+    gauges_task = None
 
     try:
-        cluster, session = get_cluster(
-            contact_points=store_cfg.cassandra_hosts.split(","),
-            port=store_cfg.cassandra_port,
-            keyspace=store_cfg.keyspace,
-        )
+        # The first version called get_cluster(contact_points=..., keyspace=...),
+        # arguments that function does not take. The TypeError was swallowed by the
+        # except below, so the API started "healthy" with no database at all.
+        cluster = create_cluster(hosts=store_cfg.cassandra_hosts, port=store_cfg.cassandra_port)
+        session = get_session(keyspace=store_cfg.keyspace, cluster=cluster)
         app.state.dao = CassandraDAO(session)
+        # A cutover must survive an API restart, so the active version is read back.
+        persisted = app.state.dao.get_sim_state("ACTIVE_SCORER_VERSION")
+        if persisted:
+            app.state.active_scorer_version = persisted
+        gauges_task = asyncio.create_task(_refresh_serving_gauges())
         app.state.cluster = cluster
         app.state.session = session
         log.info(
@@ -78,16 +85,42 @@ async def lifespan(app: FastAPI):
             port=store_cfg.cassandra_port,
         )
     except Exception as exc:
-        log.warn("cassandra_connection_deferred", error=str(exc))
+        log.error("cassandra_connection_failed", error=str(exc))
         app.state.dao = None
         app.state.cluster = None
         app.state.session = None
 
     yield
 
+    if gauges_task:
+        gauges_task.cancel()
     if cluster:
         cluster.shutdown()
         log.info("serving_layer_stopped")
+
+
+def _active_version() -> str:
+    return str(getattr(app.state, "active_scorer_version", os.environ.get("SCORER_VERSION", "v1")))
+
+
+def _current_sim_date() -> date:
+    state_path = Path(os.environ.get("SIM_STATE_PATH", "/state/sim_epoch.json"))
+    if state_path.exists():
+        return read_anchor(state_path).sim_date()
+    return date(2026, 4, 1)
+
+
+async def _refresh_serving_gauges() -> None:
+    """Keep the ward-level gauges current for Prometheus, whether or not anyone is
+    looking at the ward screen."""
+    while True:
+        try:
+            summary = await read_ward_summary(app.state.dao, "WARD-A", _active_version())
+            metrics.serving_stale_labs_patients.set(summary.stale_labs_count)
+            metrics.serving_mean_composite_risk.set(summary.mean_composite_risk)
+        except Exception as exc:
+            log.warning("serving_gauges_failed", error=str(exc))
+        await asyncio.sleep(10)
 
 
 app = FastAPI(
@@ -136,10 +169,11 @@ def _get_dao() -> CassandraDAO:
 )
 async def get_monitor_snapshot(
     ward_id: str = "WARD-A",
-    version: str = Query("v1", description="Clinical scorer version (v1 or v2)"),
+    version: str | None = Query(None, description="Scorer version; defaults to the active one"),
 ) -> WardMonitorResponse:
-    """Fetch live ward monitor snapshot pre-sorted worst-first via Cassandra clustering key."""
+    """Live ward snapshot, worst patient first, one row per patient."""
     dao = _get_dao()
+    version = version or _active_version()
     patients = await read_ward_snapshot(dao, ward_id=ward_id, version=version)
     return WardMonitorResponse(
         ward_id=ward_id,
@@ -158,11 +192,11 @@ async def get_monitor_snapshot(
 )
 async def get_ward_metrics(
     ward_id: str = "WARD-A",
-    version: str = Query("v1", description="Clinical scorer version (v1 or v2)"),
+    version: str | None = Query(None, description="Scorer version; defaults to the active one"),
 ) -> WardSummaryResponse:
     """Retrieve summary counts by risk tier, deteriorating cases, and mean composite risk."""
     dao = _get_dao()
-    return await read_ward_summary(dao, ward_id=ward_id, version=version)
+    return await read_ward_summary(dao, ward_id=ward_id, version=version or _active_version())
 
 
 # -----------------------------------------------------------------------------
@@ -269,7 +303,9 @@ async def get_alerts_feed(
 ) -> list[AlertItem]:
     """Retrieve time-bounded ward alerts (Q4)."""
     dao = _get_dao()
-    target_date = date.fromisoformat(sim_date) if sim_date else date(2026, 4, 1)
+    # Default to TODAY on the simulated clock. It used to default to the first day
+    # of the run, so the alert feed went quiet from day 2 onwards.
+    target_date = date.fromisoformat(sim_date) if sim_date else _current_sim_date()
     alerts = await read_ward_alerts(dao, ward_id=ward_id, alert_date=target_date, limit=limit)
     if severity:
         sev_upper = severity.upper()
@@ -409,8 +445,8 @@ async def get_replay_divergence(
         copd_reclassifications=copd_count,
         mean_risk_delta=mean_delta,
         clinical_summary=(
-            f"Evaluated {compared} patients. Found {copd_count} COPD reclassifications "
-            "with properly accommodated chronic hypoxia under SpO2 Scale 2."
+            f"Compared {compared} patients' current scores under {v1} and {v2}; "
+            f"{copd_count} differ. Under NEWS2 Scale 2 only COPD patients should."
         ),
         patient_diffs=diffs,
     )
@@ -436,7 +472,7 @@ async def get_pipeline_vitals() -> PipelineStatusResponse:
         speedup = 288.0
 
     dao_status = "HEALTHY" if getattr(app.state, "dao", None) is not None else "OFFLINE"
-    active_v = getattr(app.state, "active_scorer_version", os.environ.get("SCORER_VERSION", "v1"))
+    active_v = _active_version()
 
     return PipelineStatusResponse(
         status="RUNNING",

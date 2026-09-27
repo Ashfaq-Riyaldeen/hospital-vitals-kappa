@@ -326,41 +326,40 @@ class WardStoreDAO:
     ) -> list[WardRiskSnapshotRow]:
         """Fetch live snapshot pre-sorted by risk_score DESC.
 
-        Because rows have a 120s TTL and a patient's score may change within that
-        window, multiple rows for the same patient can briefly coexist. We deduplicate
-        in memory, retaining the row with the latest scored_at timestamp per patient,
-        while maintaining the descending risk_score order.
+        Because rows have a 120s TTL and a patient's score changes within that
+        window, several rows for the same patient coexist. Only the newest per
+        patient is current.
         """
         bound = self._stmt_q2.bind((ward_id, scorer_version))
         rows = self.session.execute(bound)
 
-        seen_patients: set[str] = set()
-        deduped: list[WardRiskSnapshotRow] = []
-
-        # Rows arrive ordered by risk_score DESC from clustering key
+        # A patient scored several times inside the TTL has several rows, one per
+        # risk_score. The first version kept the FIRST row per patient - which, in
+        # risk-descending order, is the WORST score of the last two real minutes
+        # (about ten simulated hours), not the current one. A patient who recovered
+        # stayed red on the screen. Keep the newest row, then order worst-first.
+        latest: dict[str, WardRiskSnapshotRow] = {}
         for r in rows:
-            if r.patient_id not in seen_patients:
-                seen_patients.add(r.patient_id)
-                deduped.append(
-                    WardRiskSnapshotRow(
-                        ward_id=r.ward_id,
-                        scorer_version=r.scorer_version,
-                        risk_score=r.risk_score,
-                        patient_id=r.patient_id,
-                        bed_id=r.bed_id,
-                        risk_tier=r.risk_tier,
-                        news2_total=r.news2_total,
-                        lab_contribution=r.lab_contribution,
-                        labs_stale=r.labs_stale,
-                        scored_at=r.scored_at,
-                        hr_latest=r.hr_latest,
-                        spo2_latest=r.spo2_latest,
-                        sbp_latest=r.sbp_latest,
-                        temp_latest=r.temp_latest,
-                    )
-                )
-
-        return deduped
+            current = latest.get(r.patient_id)
+            if current is not None and current.scored_at >= r.scored_at:
+                continue
+            latest[r.patient_id] = WardRiskSnapshotRow(
+                ward_id=r.ward_id,
+                scorer_version=r.scorer_version,
+                risk_score=r.risk_score,
+                patient_id=r.patient_id,
+                bed_id=r.bed_id,
+                risk_tier=r.risk_tier,
+                news2_total=r.news2_total,
+                lab_contribution=r.lab_contribution,
+                labs_stale=r.labs_stale,
+                scored_at=r.scored_at,
+                hr_latest=r.hr_latest,
+                spo2_latest=r.spo2_latest,
+                sbp_latest=r.sbp_latest,
+                temp_latest=r.temp_latest,
+            )
+        return sorted(latest.values(), key=lambda row: (-row.risk_score, row.patient_id))
 
     # -------------------------------------------------------------------------
     # Q3: Risk score history per patient
