@@ -17,8 +17,6 @@
             urlcolor=linknavy]{hyperref}
 
 \definecolor{linknavy}{HTML}{16447A}
-\definecolor{rulegrey}{HTML}{5A6672}
-\definecolor{callbg}{HTML}{F4F6F8}
 \definecolor{tablehead}{HTML}{E4E9EF}
 
 \setstretch{1.05}
@@ -32,9 +30,6 @@
 \renewcommand{\arraystretch}{1.25}
 \setlength{\parskip}{3pt}
 
-\newcommand{\callout}[2]{%
-  \begin{center}\fcolorbox{rulegrey}{callbg}{%
-    \begin{minipage}{0.95\linewidth}\small\textbf{#1}\\[2pt]#2\end{minipage}}\end{center}}
 \newcommand{\shot}[3]{%
   \begin{figure}[H]\centering
   \includegraphics[width=#2\linewidth]{figures/#1.png}
@@ -55,11 +50,11 @@
     \vspace*{0.5cm}
     \includegraphics[width=4cm]{Logo.jpeg}\par
     \vspace{1cm}
-    {\LARGE \textbf{Department of Electrical and Information Engineering}}\\[0.3cm]
-    {\Large \textbf{Faculty of Engineering, University of Ruhuna}}\par
+    {\LARGE Department of Electrical and Information Engineering}\\[0.3cm]
+    {\Large Faculty of Engineering, University of Ruhuna}\par
     \vfill
     {\Large \textbf{Mini Project Report}}\\[0.3cm]
-    {\large \textbf{EC8203 Applied Big Data Engineering}}\par
+    {\large{EC8203 Applied Big Data Engineering}}\par
     \vfill
     {\huge\textbf{Hospital Patient Vital Signs Monitoring}}\\[0.5cm]
     {\large\itshape A Kappa architecture for watching a ward in near real time}\par
@@ -76,7 +71,9 @@
     \vspace*{0.5cm}
 \end{titlepage}
 
+\hypersetup{linkcolor=black}
 \tableofcontents
+\hypersetup{linkcolor=linknavy}
 \clearpage
 
 % =====================================================================
@@ -88,9 +85,9 @@ oxygen level (SpO2), breathing rate, blood pressure and temperature. Once a day 
 pathology lab sends a file with blood test results for every patient. The ward wants
 to answer one question, taken from the assignment:
 
-\callout{Business question}{Which patients show concerning vital-sign trends right now,
-and how do yesterday's lab results change the risk picture for those patients going
-forward?}
+\noindent\textbf{Business question:} Which patients show concerning vital-sign trends
+right now, and how do yesterday's lab results change the risk picture for those
+patients going forward?
 
 Nurses already use a standard score for this, the National Early Warning Score 2
 (NEWS2)~\cite{rcp}. Each vital sign gets 0 to 3 points depending on how far it is from
@@ -172,7 +169,7 @@ R7 & Notice when the system itself stops & Prometheus alert
 
 \subsection{The two options}
 
-\textbf{Lambda} would have two paths. A speed layer would score readings as they
+\hspace*{\parindent}\textbf{Lambda} would have two paths. A speed layer would score readings as they
 arrive, and a batch layer would recompute everything from stored history each night.
 A serving layer would merge the two answers.
 
@@ -182,7 +179,7 @@ beginning of the log.
 
 \subsection{Why we chose Kappa}
 
-\textbf{1. The score must be the same everywhere.} In Lambda the NEWS2 rule would
+\hspace*{\parindent}\textbf{1. The score must be the same everywhere.} In Lambda the NEWS2 rule would
 exist twice, once in the stream code and once in the batch code. If they ever differ,
 even by one boundary (is a heart rate of 131 in the 2-point band or the 3-point band?),
 the ward screen and the daily report would disagree about the same patient. In a
