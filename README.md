@@ -1,7 +1,7 @@
 # Hospital Patient Vital Signs Monitoring
 
-**EC8203 Applied Big Data Engineering — Mini Project (Use Case 2)**  
-**Architecture: Kappa** — a single stream-processing path; the retained Kafka log is the historical store.
+**EC8203 Applied Big Data Engineering - Mini Project (Use Case 2)**  
+**Architecture: Kappa**: a single stream-processing path; the retained Kafka log is the historical store.
 
 ## Safety Disclaimer
 
@@ -11,7 +11,7 @@ This system processes **entirely simulated data** and is a teaching exercise. NE
 
 > *Which patients show concerning vital-sign trends **right now**, and how do **yesterday's lab results** change the risk picture for those patients **going forward**?*
 
-Both halves of this question converge on **one single number per patient: their current composite risk**. Laboratory results do not produce a separate answer — they *modify* the same answer.
+Both halves of this question converge on **one single number per patient: their current composite risk**. Laboratory results do not produce a separate answer; they *modify* the same answer.
 
 This is the foundational argument for selecting a **pure Kappa Architecture** over Lambda:
 - Splitting the calculation across a speed layer (real-time stream) and a batch layer (nightly batch job) would necessitate two independent implementations of the identical clinical risk calculation.
